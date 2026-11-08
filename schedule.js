@@ -1,0 +1,72 @@
+"use strict";
+window.orderedVenues = function (config, type, field) {
+  return config.venues.filter(function (venue) { return venue.type === type && Number(venue[field]) > 0; }).sort(function (a, b) { return Number(a[field]) - Number(b[field]); }).map(function (venue) { return venue.name; });
+};
+window.addMinutes = function (date, minutes) { return new Date(date.getTime() + minutes * 60000); };
+window.formatTime = function (date) { return date.toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit", hour12: false }); };
+window.parseClock = function (timeText, date) {
+  var parts = timeText.split(":");
+  var result = new Date(date);
+  result.setHours(Number(parts[0]), Number(parts[1]), 0, 0);
+  return result;
+};
+window.buildSchedule = function (config, days) {
+  var schedule = [];
+  var venues = window.venueMap(config);
+  days.forEach(function (day) {
+    if (!day.transfers.length) return;
+    var weekday = day.date.getDay();
+    var isVanDay = config.vanDaysMode === 2 ? weekday === 2 || weekday === 4 : weekday === 1 || weekday === 3 || weekday === 5;
+    var isWeekend = weekday === 0 || weekday === 6;
+    var ship = new Map(), receive = new Map(), oneStopMorning = new Map(), oneStopAfternoon = new Map(), vanOnTruckShip = new Map(), vanOnTruckReceive = new Map();
+    day.transfers.forEach(function (row) { window.addOrCreate(row.direction === "Ship" ? ship : receive, row.shipFrom, row.transfer); });
+    Array.from(ship.keys()).forEach(function (venue) {
+      var venueConfig = venues.get(venue);
+      if (!venueConfig || venueConfig.stopsPerDay !== 1 || !receive.has(venue)) return;
+      var morning = (isVanDay && venueConfig.type === "VAN") || (!isVanDay && venueConfig.type === "TRUCK");
+      var target = morning ? oneStopMorning : oneStopAfternoon;
+      target.set(venue, { pickup: ship.get(venue), dropoff: receive.get(venue) });
+      ship.delete(venue); receive.delete(venue);
+    });
+    if (!isVanDay) {
+      Array.from(ship.keys()).forEach(function (venue) { if (venues.get(venue) && venues.get(venue).type === "VAN") { vanOnTruckShip.set(venue, ship.get(venue)); ship.delete(venue); } });
+      Array.from(receive.keys()).forEach(function (venue) { if (venues.get(venue) && venues.get(venue).type === "VAN") { vanOnTruckReceive.set(venue, receive.get(venue)); receive.delete(venue); } });
+    }
+    var truckAM = window.orderedVenues(config, "TRUCK", "truckOrderAM");
+    var truckPM = window.orderedVenues(config, "TRUCK", "truckOrderPM");
+    var vanOrder = window.orderedVenues(config, "VAN", "vanOrder");
+    var truckMorning = new Date(day.date); truckMorning.setHours(9, 0, 0, 0);
+    truckAM.forEach(function (venue) { if (ship.has(venue)) truckMorning = window.addMinutes(truckMorning, 30); });
+    truckAM.forEach(function (venue) { if (oneStopMorning.has(venue)) truckMorning = window.addMinutes(truckMorning, 30); });
+    if (!isVanDay) Array.from(vanOnTruckShip.keys()).forEach(function () { truckMorning = window.addMinutes(truckMorning, 30); });
+    var truckLunch = window.addMinutes(truckMorning, 30);
+    var truckAfternoon = window.addMinutes(truckLunch, 60);
+    var vanAfternoon = truckAfternoon;
+    if (isVanDay) {
+      var vanMorning = new Date(day.date); vanMorning.setHours(9, 0, 0, 0);
+      vanOrder.forEach(function (venue) { if (ship.has(venue)) vanMorning = window.addMinutes(vanMorning, 30); });
+      vanOrder.forEach(function (venue) { if (oneStopMorning.has(venue)) vanMorning = window.addMinutes(vanMorning, 30); });
+      var vanLunch = window.addMinutes(vanMorning, 30);
+      vanAfternoon = window.addMinutes(vanLunch, 60);
+      var latest = vanAfternoon > truckAfternoon ? vanAfternoon : truckAfternoon;
+      truckAfternoon = latest; vanAfternoon = latest;
+    }
+    var truckRows = [{ time: "09:00", site: window.BASE, transfers: "Start of Run", css: "base" }];
+    function pushStop(rows, venue, transfers, css) { rows.push({ time: window.formatTime(window.addMinutes(window.parseClock(rows[rows.length - 1].time, day.date), 30)), site: venue, transfers: transfers, css: css }); }
+    truckAM.forEach(function (venue) { if (ship.has(venue)) pushStop(truckRows, venue, ship.get(venue), "pickup"); });
+    truckAM.forEach(function (venue) { if (oneStopMorning.has(venue)) pushStop(truckRows, venue, "PICKUP " + oneStopMorning.get(venue).pickup + " / DROPOFF " + oneStopMorning.get(venue).dropoff, "one-stop"); });
+    vanOnTruckShip.forEach(function (value, venue) { pushStop(truckRows, venue, value, "van-on-truck"); });
+    if (day.returns) pushStop(truckRows, window.BASE, "RETURNS " + day.returns, "base");
+    truckRows.push({ time: window.formatTime(truckLunch), site: window.BASE, transfers: "Lunch break - 1 hour, returns unloaded", css: "lunch" });
+    truckRows.push({ time: window.formatTime(truckAfternoon), site: window.BASE, transfers: "Start Afternoon Run", css: "base" });
+    truckPM.forEach(function (venue) { if (oneStopAfternoon.has(venue)) pushStop(truckRows, venue, "PICKUP " + oneStopAfternoon.get(venue).pickup + " / DROPOFF " + oneStopAfternoon.get(venue).dropoff, "one-stop"); });
+    truckPM.forEach(function (venue) { if (receive.has(venue)) pushStop(truckRows, venue, receive.get(venue), "dropoff"); });
+    vanOnTruckReceive.forEach(function (value, venue) { pushStop(truckRows, venue, value, "van-on-truck"); });
+    pushStop(truckRows, window.BASE, "End of Run", "base");
+    var warnings = [];
+    var vanCount = vanOnTruckShip.size + vanOnTruckReceive.size;
+    if (vanCount > 1) warnings.push(vanCount + " van venues on truck day - consider moving transfers or adding a van run.");
+    schedule.push({ date: day.date, isWeekend: isWeekend, truck: { title: "TRUCK RUN - Approx. timings for " + day.date.toLocaleDateString("en-AU", { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric" }), rows: truckRows, warnings: warnings }, van: isVanDay ? window.buildVanRun(day, vanOrder, ship, receive, oneStopMorning, oneStopAfternoon, vanAfternoon) : null, baseJobs: day.baseJobs });
+  });
+  return schedule;
+};

@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DarrenMemorial — Milk Run Scheduler</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header>
+<h1>Milk Run Scheduler</h1>
+<p>Local-only scheduling tool. Paste Dump data, generate the run, and export it. Nothing is uploaded.</p>
+</header>
+<main>
+<section class="card">
+<h2>1. Paste Dump data</h2>
+<p>Copy the Dump table from Excel or your source system, click below, and paste with Ctrl+V / Cmd+V.</p>
+<textarea id="dumpInput" rows="12" placeholder="Paste the full Dump table here...\n\nThe first cell must be TRUE or FALSE."></textarea>
+<div class="actions">
+<button id="generateBtn" class="primary">Generate Milk Run</button>
+<button id="clearDumpBtn">Clear Dump</button>
+<button id="exportCsvBtn" disabled>Download CSV</button>
+</div>
+<div id="dumpStatus" class="status"></div>
+</section>
+<section class="card">
+<h2>2. Configuration</h2>
+<div class="config-controls">
+<label>Van days mode
+<select id="vanDaysMode">
+<option value="2">2 — Tuesday / Thursday</option>
+<option value="3">3 — Monday / Wednesday / Friday</option>
+</select>
+</label>
+<button id="addVenueBtn">Add venue</button>
+<button id="exportConfigBtn">Export config JSON</button>
+<label class="file-label">Import config JSON<input type="file" id="importConfigInput" accept=".json,application/json"></label>
+<button id="resetConfigBtn" class="danger">Reset config</button>
+</div>
+<div class="table-wrap">
+<table id="venueTable">
+<thead><tr><th>Venue</th><th>Contact</th><th>Type</th><th>Stops/day</th><th>Truck AM</th><th>Truck PM</th><th>Van order</th><th></th></tr></thead>
+<tbody id="venueRows"></tbody>
+</table>
+</div>
+<p class="hint">Stops/day = 1 marks a one-stop venue. Truck AM/PM and Van order control stop sequence; blank or 0 excludes a venue from that ordered list.</p>
+</section>
+<section class="card">
+<h2>3. Generated schedule</h2>
+<div id="scheduleOutput"></div>
+</section>
+</main>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+"use strict";
+(function(root){
+function minutes(s){const m=String(s).match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)?$/i);if(!m)return NaN;let h=+m[1],n=+m[2];if(n>59||h>23||m[3]&&(h<1||h>12))return NaN;if(m[3])h=h%12+(/PM/i.test(m[3])?12:0);return h*60+n;}
+function clock(n){const day=Math.floor(n/1440),v=(n%1440+1440)%1440;return String(Math.floor(v/60)).padStart(2,'0')+':'+String(v%60).padStart(2,'0')+(day?' ('+(day>0?'+':'')+day+'d)':'');}
+function plan(items,jobs){const errors=[],blocks=jobs.map(j=>({...j,center:minutes(j.time)})).sort((a,b)=>a.center-b.center);blocks.forEach((j,i)=>{j.start=j.center-60;j.end=j.center+60;if(!Number.isFinite(j.center))throw Error('Invalid base-job time: '+j.time);const next=blocks[i+1];if(next){if(next.center-60<j.center)errors.push('Conflicting base jobs: '+j.info+' / '+next.info);else j.end=Math.min(j.end,next.center-60);}});const rows=[];let t=540,k=0,last='Melbourne Base';
+function emit(j){if(last!=='Melbourne Base'){if(t+30>j.start)errors.push('Insufficient return time for '+j.info);rows.push({time:clock(Math.max(t+30,j.start)),site:'Melbourne Base',transfers:'Return for base job',css:'base'});}if(t>j.start&&rows.length)errors.push('Base-job window starts before vehicle is free: '+j.info);rows.push({time:clock(j.start),site:'Melbourne Base',transfers:'BASE JOB '+j.info+' | '+clock(j.start)+'–'+clock(j.end)+' | Dump '+j.time,css:'base-job',editorJob:j.key});t=Math.max(t,j.end);last='Melbourne Base';}
+while(k<blocks.length&&blocks[k].start<=t)emit(blocks[k++]);rows.push({time:clock(t),site:'Melbourne Base',transfers:'Start / resume run',css:'base'});
+items.forEach(r=>{let duration=r.css==='lunch'?60:30;while(k<blocks.length&&blocks[k].start<t+duration+30)emit(blocks[k++]);if(r.css==='lunch'){if(last!=='Melbourne Base'){t+=30;rows.push({time:clock(t),site:'Melbourne Base',transfers:'Return for lunch',css:'base'});}rows.push({...r,time:clock(t)});t+=60;last='Melbourne Base';}else{t+=30;rows.push({...r,time:clock(t)});last=r.site;}});
+while(k<blocks.length)emit(blocks[k++]);if(last!=='Melbourne Base')t+=30;rows.push({time:clock(t),site:'Melbourne Base',transfers:'End of Run',css:'base'});return {rows,errors};}
+root.RunEngine={minutes,clock,plan};if(typeof module!=='undefined')module.exports=root.RunEngine;
+})(typeof window==='undefined'?globalThis:window);

@@ -36,6 +36,13 @@ window.buildSchedule = function (config, days) {
       target.set(venue, { pickup: ship.get(venue), dropoff: receive.get(venue) });
       ship.delete(venue); receive.delete(venue);
     });
+    var origin = new Map(), destination = new Map();
+    ship.forEach(function (value, venue) { String(value).split(', ').forEach(function (transfer) { origin.set(transfer, venue); }); });
+    receive.forEach(function (value, venue) { String(value).split(', ').forEach(function (transfer) { destination.set(transfer, venue); }); });
+    oneStopMorning.forEach(function (value, venue) { String(value.pickup).split(', ').forEach(function (transfer) { origin.set(transfer, venue); destination.set(transfer, venue); }); });
+    oneStopAfternoon.forEach(function (value, venue) { String(value.pickup).split(', ').forEach(function (transfer) { origin.set(transfer, venue); destination.set(transfer, venue); }); });
+    function destinationsFor(value) { return String(value).split(', ').map(function (transfer) { return destination.get(transfer); }).filter(Boolean).join(', '); }
+    function originsFor(value) { return String(value).split(', ').map(function (transfer) { return origin.get(transfer); }).filter(Boolean).join(', '); }
     if (!isVanDay) {
       Array.from(ship.keys()).forEach(function (venue) { if (venues.get(venue) && venues.get(venue).type === "VAN") { vanOnTruckShip.set(venue, ship.get(venue)); ship.delete(venue); } });
       Array.from(receive.keys()).forEach(function (venue) { if (venues.get(venue) && venues.get(venue).type === "VAN") { vanOnTruckReceive.set(venue, receive.get(venue)); receive.delete(venue); } });
@@ -60,16 +67,16 @@ window.buildSchedule = function (config, days) {
       truckAfternoon = latest; vanAfternoon = latest;
     }
     var truckRows = [{ time: "09:00", site: window.BASE, transfers: "Start of Run", css: "base" }];
-    function pushStop(rows, venue, transfers, css) { rows.push({ time: window.formatTime(window.addMinutes(window.parseClock(rows[rows.length - 1].time, day.date), 30)), site: venue, transfers: transfers, css: css }); }
-    truckAM.forEach(function (venue) { if (ship.has(venue)) pushStop(truckRows, venue, ship.get(venue), "pickup"); });
-    truckAM.forEach(function (venue) { if (oneStopMorning.has(venue)) pushStop(truckRows, venue, "PICKUP " + oneStopMorning.get(venue).pickup + " / DROPOFF " + oneStopMorning.get(venue).dropoff, "one-stop"); });
-    vanOnTruckShip.forEach(function (value, venue) { pushStop(truckRows, venue, value, "van-on-truck"); });
+    function pushStop(rows, venue, transfers, css, siteFrom, siteTo) { rows.push({ time: window.formatTime(window.addMinutes(window.parseClock(rows[rows.length - 1].time, day.date), 30)), site: venue, transfers: transfers, css: css, siteFrom: siteFrom || venue, siteTo: siteTo || '' }); }
+    truckAM.forEach(function (venue) { if (ship.has(venue)) pushStop(truckRows, venue, ship.get(venue), "pickup", venue, destinationsFor(ship.get(venue))); });
+    truckAM.forEach(function (venue) { if (oneStopMorning.has(venue)) pushStop(truckRows, venue, "PICKUP " + oneStopMorning.get(venue).pickup + " / DROPOFF " + oneStopMorning.get(venue).dropoff, "one-stop", venue, venue); });
+    vanOnTruckShip.forEach(function (value, venue) { pushStop(truckRows, venue, value, "van-on-truck", venue, destinationsFor(value)); });
     if (day.returns) pushStop(truckRows, window.BASE, "RETURNS " + day.returns, "base");
     truckRows.push({ time: window.formatTime(truckLunch), site: window.BASE, transfers: "Lunch break - 1 hour, returns unloaded", css: "lunch" });
     truckRows.push({ time: window.formatTime(truckAfternoon), site: window.BASE, transfers: "Start Afternoon Run", css: "base" });
-    truckPM.forEach(function (venue) { if (oneStopAfternoon.has(venue)) pushStop(truckRows, venue, "PICKUP " + oneStopAfternoon.get(venue).pickup + " / DROPOFF " + oneStopAfternoon.get(venue).dropoff, "one-stop"); });
-    truckPM.forEach(function (venue) { if (receive.has(venue)) pushStop(truckRows, venue, receive.get(venue), "dropoff"); });
-    vanOnTruckReceive.forEach(function (value, venue) { pushStop(truckRows, venue, value, "van-on-truck"); });
+    truckPM.forEach(function (venue) { if (oneStopAfternoon.has(venue)) pushStop(truckRows, venue, "PICKUP " + oneStopAfternoon.get(venue).pickup + " / DROPOFF " + oneStopAfternoon.get(venue).dropoff, "one-stop", venue, venue); });
+    truckPM.forEach(function (venue) { if (receive.has(venue)) pushStop(truckRows, venue, receive.get(venue), "dropoff", originsFor(receive.get(venue)), venue); });
+    vanOnTruckReceive.forEach(function (value, venue) { pushStop(truckRows, venue, value, "van-on-truck", originsFor(value), venue); });
     pushStop(truckRows, window.BASE, "End of Run", "base");
     var warnings = [];
     var vanCount = vanOnTruckShip.size + vanOnTruckReceive.size;

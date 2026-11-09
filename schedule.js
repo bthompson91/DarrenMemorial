@@ -10,13 +10,21 @@ window.parseClock = function (timeText, date) {
   result.setHours(Number(parts[0]), Number(parts[1]), 0, 0);
   return result;
 };
+window.vehicleDays = function (config, vehicle) {
+  var days = config[vehicle + 'Days'];
+  if (Array.isArray(days)) return days.map(Number);
+  return vehicle === 'van' ? (config.vanDaysMode === 2 ? [2, 4] : [1, 3, 5]) : [1, 2, 3, 4, 5];
+};
 window.buildSchedule = function (config, days) {
   var schedule = [];
   var venues = window.venueMap(config);
+  var truckDays = window.vehicleDays(config, 'truck');
+  var vanDays = window.vehicleDays(config, 'van');
   days.forEach(function (day) {
     if (!day.transfers.length) return;
     var weekday = day.date.getDay();
-    var isVanDay = config.vanDaysMode === 2 ? weekday === 2 || weekday === 4 : weekday === 1 || weekday === 3 || weekday === 5;
+    var isTruckDay = truckDays.includes(weekday);
+    var isVanDay = vanDays.includes(weekday);
     var isWeekend = weekday === 0 || weekday === 6;
     var ship = new Map(), receive = new Map(), oneStopMorning = new Map(), oneStopAfternoon = new Map(), vanOnTruckShip = new Map(), vanOnTruckReceive = new Map();
     day.transfers.forEach(function (row) { window.addOrCreate(row.direction === "Ship" ? ship : receive, row.shipFrom, row.transfer); });
@@ -66,7 +74,8 @@ window.buildSchedule = function (config, days) {
     var warnings = [];
     var vanCount = vanOnTruckShip.size + vanOnTruckReceive.size;
     if (vanCount > 1) warnings.push(vanCount + " van venues on truck day - consider moving transfers or adding a van run.");
-    schedule.push({ date: day.date, isWeekend: isWeekend, truck: { title: "TRUCK RUN - Approx. timings for " + day.date.toLocaleDateString("en-AU", { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric" }), rows: truckRows, warnings: warnings }, van: isVanDay ? window.buildVanRun(day, vanOrder, ship, receive, oneStopMorning, oneStopAfternoon, vanAfternoon) : null, baseJobs: day.baseJobs });
+    if (!isTruckDay) warnings.push("Truck is not scheduled on this day. Assign required work to another available vehicle or enable an extra Truck run.");
+    schedule.push({ date: day.date, isWeekend: isWeekend, truck: isTruckDay ? { title: "TRUCK RUN - Approx. timings for " + day.date.toLocaleDateString("en-AU", { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric" }), rows: truckRows, warnings: warnings } : { title: "TRUCK NOT SCHEDULED", rows: [], warnings: warnings }, van: isVanDay ? window.buildVanRun(day, vanOrder, ship, receive, oneStopMorning, oneStopAfternoon, vanAfternoon) : null, baseJobs: day.baseJobs });
   });
   return schedule;
 };

@@ -50,8 +50,10 @@ window.groupByDate = function(rows) {
       return;
     }
     if(row.direction!=='Ship' && row.direction!=='Receive') return;
-    if(row.shipFrom===window.BASE && !row.managedBy) return;
-    if(row.direction==='Receive' && row.shipFrom===window.BASE && row.managedBy) {day.returns=day.returns?day.returns+', '+row.transfer:row.transfer;return;}
+    if(row.direction==='Receive' && row.shipFrom===window.BASE) {
+      if(row.managedBy) day.returns=day.returns?day.returns+', '+row.transfer:row.transfer;
+      return;
+    }
     day.transfers.push(row);
   });
   return Array.from(days.values()).sort(function(a,b){return a.date-b.date;});

@@ -1,8 +1,10 @@
 # Darren Langsford Memorial Milkrun Generator
 # Feature Bible
-Version 0.4 — 10 November 2026
+Version 0.5 — 10 November 2026
 
 ## Revision history
+0.5: Added configurable base-location designation in Configuration > Venues, automatic designation when exactly one venue name contains the word Base, and a Change/Add/Cancel confirmation when selecting another base. Supports multiple base venues, including Adelaide Base and Major Events sharing a building. Explicit configuration supersedes name-based detection. Updated configuration portability, base classification and acceptance tests. No primary-base hierarchy is introduced.
+
 0.4: Confirmed shift and timing rules, equal-count combination, Time-column delink behaviour, multi-target joins, Dump identity/header rules, missing-transfer handling, unavailable-vehicle fallback, public-holiday flag behaviour, configuration import overwrite, separate full schedule backup, Outlook copy target, empty-date text and provider permissions. This edition consolidates the requirements discussion and supersedes version 0.3.
 
 0.3: Confirmed stop split and join behaviour, including time, position, lock, vehicle, contact, cargo and colour rules. Removed resolved split/join conflict decisions from open decisions. This edition consolidates the requirements discussion and supersedes version 0.2.
@@ -29,6 +31,18 @@ Each venue: name, onsite contact, Truck/Van type dropdown, secondary filtered dr
 No venue weekday checkboxes.
 Support default one-stop/two-stop behaviour with day-specific overrides.
 
+### Base locations
+In Configuration > Venues, provide a Base location setting on venues in the list. One or more active venues may be designated as base locations.
+If no explicit base configuration exists and exactly one venue name contains the word Base, automatically designate that venue as the base location. If zero or multiple names contain Base, do not arbitrarily select one; let the user configure the base location(s).
+When a base already exists and the user selects another venue as a base, ask whether to CHANGE the existing base location(s) or ADD another base location:
+- Change: replace the existing base designation(s) with the selected venue.
+- Add: retain existing base designation(s) and also mark the selected venue as a base.
+- Cancel: leave the configuration unchanged.
+The confirmation identifies the existing base venue(s) and the proposed venue.
+A base venue need not contain Base in its name. Explicit user configuration takes precedence over automatic name detection and must not be overwritten by it.
+Example: Adelaide can designate both Adelaide Base and Major Events, which operate from the same building. Melbourne can retain Melbourne Base alone. Multiple base venue records do not, by themselves, imply separate buildings, separate lunch groups or additional travel.
+Configured base venues are used for base-job/return/transfer classification and warehouse/base recognition. A primary-versus-secondary base hierarchy is not a confirmed requirement.
+
 ## 5. Default route order
 Separate section below venue setup: each company-owned run vehicle has a table with assigned venues in AM and PM columns, with up/down arrows. Same as morning checkbox on right mirrors AM sequence; unticking enables independent PM order. Assignment stays the same; only sequence differs. Generated-day reassignment must not rewrite configuration.
 
@@ -41,7 +55,7 @@ Public holidays are user-facing flags only. They do not cancel or move work auto
 
 ## 8. Configuration portability
 Buttons: Export configuration and Import configuration. Hide technical JSON/schema wording from normal UI. Internally use JSON.
-Include all vehicle fields, availability/exceptions, provider settings, active/archived venues and contacts, assignments, AM/PM order, same-as-morning settings, location and holiday configuration.
+Include all vehicle fields, availability/exceptions, provider settings, active/archived venues and contacts, assignments, AM/PM order, same-as-morning settings, location and holiday configuration. Include all base-location designations and preserve explicit base choices on export/import and refresh.
 Importing a configuration JSON OVERWRITES the existing configuration. Versioned file and validation before changes remain proposed.
 Configuration backup does not automatically include operational schedule edits. The Schedules tab has a separate full schedule backup/export.
 
@@ -58,7 +72,7 @@ Classification after exclusion:
 - Otherwise L is venue; Ship=pickup/transfer-out, Receive=drop-off/transfer-in.
 VBA concatenates H per venue/direction; rebuild retains atomic transfer records.
 Paste macro validates A1 TRUE/FALSE and removes occurrences of 00000 from H. Date formats dd-mm-yyyy, dd/mm/yyyy or Excel date values.
-The app should detect whether pasted data includes a header row. Group dates independent of row order; report malformed rows and unknown venues; retain raw references before cleanup for identity. The base venue varies by state, but its name always contains the word “Base”. Generalising Melbourne Base requires a confirmed rule.
+The app should detect whether pasted data includes a header row. Group dates independent of row order; report malformed rows and unknown venues; retain raw references before cleanup for identity. The Melbourne Base tests above describe the legacy macro. In the rebuild, recognise the configured base-location set from section 4 rather than hardcoding Melbourne Base or requiring every base name to contain Base. Apply base-job/return/transfer classification using those configured base venues. The actual Dump sample is still required to validate source-column handling.
 Do not inherit silent omission of base-job-only dates or unknown venues.
 
 ## 11. Unknown venues
@@ -179,6 +193,11 @@ Actual formatted tables required: borders, headings, backgrounds, bold sites, wr
 - Vehicle ownership/type/registration/date validations and per-vehicle weekdays.
 - Venue filtered company-owned defaults; independent AM/PM arrows and same-as-morning.
 - Archive/restore and complete configuration export/import round-trip.
+- Automatically designate the sole venue whose name contains the word Base when no explicit base configuration exists.
+- Zero or multiple Base-name candidates do not cause arbitrary automatic selection.
+- Selecting another base prompts Change/Add/Cancel with named venues; Change replaces prior designation(s), Add retains them, Cancel changes nothing.
+- Adelaide Base and Major Events can both be bases even though Major Events lacks Base in its name; Melbourne can use Melbourne Base alone.
+- Explicit base designations survive refresh/export/import and are used for base-job, return and transfer classification.
 - Unknown/archived dump venues surfaced without losing pasted data/edits.
 - Multiple vehicles; date filter; base-only/external-only dates visible.
 - Combined-stop lunch adjacency; individual split/rejoin/move without duplication.
@@ -205,7 +224,7 @@ Time-column delink is RESOLVED: only on orange combined stops; creates red picku
 Multi-target joins are RESOLVED: join all compatible same-venue same-day targets.
 Dump header detection is RESOLVED: app detects header presence.
 Venue identity is RESOLVED: venue name is sufficient.
-Base venue is RESOLVED: state-specific base whose name contains “Base”.
+Base designation is RESOLVED: configure one or more base venues in Configuration > Venues; automatically designate a sole Base-name candidate only when no explicit base configuration exists; selecting another base prompts Change/Add/Cancel. Explicit designation, not the venue name, controls base recognition.
 Missing transfers are RESOLVED: removed from display; stop retains assignment/order/contact/lock.
 Unavailable default vehicle fallback is RESOLVED: rental same type, company same type, rental different type; van-on-truck flagged.
 Public holidays are RESOLVED: user-facing flags only.

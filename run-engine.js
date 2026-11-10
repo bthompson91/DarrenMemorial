@@ -20,20 +20,7 @@ function plan(items,jobs){
  }
  rows.push({time:clock(t),site:last,transfers:'Start of Run',css:'base'});
  const stops=items.filter(r=>r.css!=='lunch');
- function direction(row){const text=String(row.transfers||'').toUpperCase();const out=(text.match(/T-OUT|SHIP|PICKUP/g)||[]).length;const inn=(text.match(/T-IN|RECEIVE|DROPOFF/g)||[]).length;return out>inn?'out':inn>out?'in':'equal';}
- function isCombined(row){const text=String(row.transfers||'').toUpperCase();return /T-OUT|SHIP|PICKUP/.test(text)&&/T-IN|RECEIVE|DROPOFF/.test(text);}
- const morning=[],afternoon=[];
- stops.forEach(row=>{
-  if(isCombined(row)){const d=direction(row);(d==='in'?afternoon:morning).push(row);return;}
-  const d=direction(row);(d==='in'?afternoon:morning).push(row);
- });
- const ordered=morning.concat(afternoon);
- let lunchInserted=false;
- ordered.forEach(row=>{
-  if(!lunchInserted&&row===afternoon[0]){while(rest<60)pause();lunchInserted=true;}
-  while(k<blocks.length&&blocks[k].start<t+30+(work+30>240?30:0)+30)emit(blocks[k++]);
-  activity(30);last=row.site;rows.push({...row,time:clock(t)});
- });
+ stops.forEach(r=>{while(k<blocks.length&&blocks[k].start<t+30+(work+30>240?30:0)+30)emit(blocks[k++]);activity(30);last=r.site;rows.push({...r,time:clock(t)});});
  while(k<blocks.length)emit(blocks[k++]);
  if(last!=='Melbourne Base'){activity(30);last='Melbourne Base';rows.push({time:clock(t),site:last,transfers:'Return to base',css:'base'});}
  while(rest<60)pause();
@@ -59,7 +46,7 @@ setTimeout(function(){
  const html='<html><head><meta charset="utf-8"></head><body>'+clone.outerHTML+'</body></html>';
  const text=Array.from(clone.querySelectorAll('.day-header,.run-title,tr,.editor-error,.warning')).map(n=>n.matches('tr')?Array.from(n.cells).map(c=>c.textContent.trim()).join('\t'):n.textContent.trim()).join('\n');
  function legacy(){let copied=false;function handler(e){if(e.clipboardData){e.preventDefault();e.clipboardData.setData('text/html',html);e.clipboardData.setData('text/plain',text);copied=true;}}document.addEventListener('copy',handler);try{return document.execCommand('copy')&&copied;}finally{document.removeEventListener('copy',handler);}}
- try{if(navigator.clipboard&&navigator.clipboard.write&&window.ClipboardItem&&window.isSecureContext){try{await navigator.clipboard.write([new ClipboardItem({'text/html':new Blob([html],{type:'text/html'}),type:'text/plain',text})]);}catch(e){if(!legacy())throw e;}}else if(!legacy())throw Error('Clipboard blocked');button.textContent='Copied with formatting';setTimeout(()=>button.textContent=label,1800);}
+ try{if(navigator.clipboard&&navigator.clipboard.write&&window.ClipboardItem&&window.isSecureContext){try{await navigator.clipboard.write([new ClipboardItem({'text/html':new Blob([html],{type:'text/html'}),'text/plain':new Blob([text],{type:'text/plain'})})]);}catch(e){if(legacy())throw e;}}else if(!legacy())throw Error('Clipboard blocked');button.textContent='Copied with formatting';setTimeout(()=>button.textContent=label,1800);}
  catch(e){let preview=document.getElementById('formattedCopyPreview');if(!preview){preview=document.createElement('div');preview.id='formattedCopyPreview';output.after(preview);}preview.replaceChildren();const help=document.createElement('p');help.textContent='Automatic copy blocked. The formatted sheet below is selected: press Ctrl+C / Cmd+C, then paste with source formatting.';preview.append(help,clone);const range=document.createRange();range.selectNodeContents(clone);const selection=getSelection();selection.removeAllRanges();selection.addRange(range);}
  },true);
  if(window.currentSchedule&&currentSchedule.length)window.renderSchedule(currentSchedule);

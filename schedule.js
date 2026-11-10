@@ -31,7 +31,9 @@ window.buildSchedule = function (config, days) {
     Array.from(ship.keys()).forEach(function (venue) {
       var venueConfig = venues.get(venue);
       if (!venueConfig || venueConfig.stopsPerDay !== 1 || !receive.has(venue)) return;
-      var morning = (isVanDay && venueConfig.type === "VAN") || (!isVanDay && venueConfig.type === "TRUCK");
+      var pickups = String(ship.get(venue) || '').split(', ').filter(Boolean).length;
+      var dropoffs = String(receive.get(venue) || '').split(', ').filter(Boolean).length;
+      var morning = dropoffs <= pickups;
       var target = morning ? oneStopMorning : oneStopAfternoon;
       target.set(venue, { pickup: ship.get(venue), dropoff: receive.get(venue) });
       ship.delete(venue); receive.delete(venue);

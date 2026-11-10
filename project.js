@@ -6,7 +6,11 @@ async function merge(saved,rows,dateOf){const incoming=await Promise.all(rows.ma
  for(const k of new Set([...oldMap.keys(),...newMap.keys()])){const old=(oldMap.get(k)||[]).slice(),next=(newMap.get(k)||[]).slice();for(let i=next.length-1;i>=0;i--){const j=old.findIndex(r=>canonical(r.row)===canonical(next[i].row));if(j>=0){records.push({...old.splice(j,1)[0],...next.splice(i,1)[0],notSeen:false});unchanged++;}}
  function update(a,b){records.push({...a,row:b.row,hash:b.hash,notSeen:false});affected.add(dateOf(a.row));affected.add(dateOf(b.row));updated++;changes.push('UPDATED '+b.row.transfer+' on '+b.row.dateText);}
  for(const day of new Set(next.map(r=>dateOf(r.row)))){const a=old.filter(r=>dateOf(r.row)===day),b=next.filter(r=>dateOf(r.row)===day);if(a.length===1&&b.length===1&&b[0].row.transfer){update(a[0],b[0]);old.splice(old.indexOf(a[0]),1);next.splice(next.indexOf(b[0]),1);}}
- if(old.length&&next.length){if(old.length!==1||next.length!==1||!next[0].row.transfer)throw Error('Ambiguous activity match for '+(next[0].row.transfer||'blank job')+'. Nothing saved; existing schedule retained.');update(old.pop(),next.pop());}
+ const timeKey=r=>String(r.row.baseTime||'').padStart(5,'0')+String(r.row.transfer||'');
+ old.sort((a,b)=>timeKey(a).localeCompare(timeKey(b)));next.sort((a,b)=>timeKey(a).localeCompare(timeKey(b)));
+ const pairs=Math.min(old.length,next.length);
+ for(let i=0;i<pairs;i++)update(old[i],next[i]);
+ old.splice(0,pairs);next.splice(0,pairs);
  next.forEach(r=>{records.push({id:root.crypto?.randomUUID?.()||Date.now()+'-'+Math.random(),...r,notSeen:false});affected.add(dateOf(r.row));added++;changes.push('ADDED '+r.row.transfer+' on '+r.row.dateText);});records.push(...old);
  }return {records,changes,affected,added,updated,unchanged};}
 root.ProjectMerge={merge,hash};if(typeof module!=='undefined')module.exports=root.ProjectMerge;if(typeof window==='undefined')return;

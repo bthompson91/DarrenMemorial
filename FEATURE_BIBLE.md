@@ -1,8 +1,10 @@
 # Darren Langsford Memorial Milkrun Generator
 # Feature Bible
-Version 0.5 — 10 November 2026
+Version 0.6 — 11 November 2026
 
 ## Revision history
+0.6: Adopted the supplied Tailwind CSS style reference for the app interface: white canvas, hairline structure, near-black typography, Inter, restrained monospace, black pill primary actions and compact neutral configuration panels. Preserved the schedule screenshot, operational colours and Outlook table output as separate requirements. This is a specification update, not implementation of app styling.
+
 0.5: Added configurable base-location designation in Configuration > Venues, automatic designation when exactly one venue name contains the word Base, and a Change/Add/Cancel confirmation when selecting another base. Supports multiple base venues, including Adelaide Base and Major Events sharing a building. Explicit configuration supersedes name-based detection. Updated configuration portability, base classification and acceptance tests. No primary-base hierarchy is introduced.
 
 0.4: Confirmed shift and timing rules, equal-count combination, Time-column delink behaviour, multi-target joins, Dump identity/header rules, missing-transfer handling, unavailable-vehicle fallback, public-holiday flag behaviour, configuration import overwrite, separate full schedule backup, Outlook copy target, empty-date text and provider permissions. This edition consolidates the requirements discussion and supersedes version 0.3.
@@ -184,6 +186,20 @@ VBA palette:
 - Multiple van-stop warning: yellow/red bold.
 VBA precedence: combined orange > van-on-truck purple > pickup/drop-off.
 
+### App interface design direction (v0.6)
+Use the user-supplied Tailwind CSS style reference dated 11 November 2026 for the surrounding app interface. It is a visual reference, not a requirement to adopt a particular CSS framework.
+Keep the existing schedule screenshot authoritative for run-table structure, operational colours and Outlook output. The interface styling must not replace or mute the schedule palette above.
+- Canvas and structure: white Paper #FFFFFF background; subtle 1px Guide Wash #F2F2F3 rules; clean, compact desktop workspace. Use neutral panels and thin borders rather than heavy shadows or coloured section backgrounds.
+- Text: Midnight Ink #030712 headings/navigation, Body Slate #4A5565 supporting copy, Muted Gray #6A7282 secondary metadata and placeholders. Near-black text, with pure black reserved for filled primary actions.
+- Typography: Inter with system sans-serif fallback for headings, navigation, forms and body; IBM Plex Mono with system monospace fallback used sparingly for times, references or secondary metadata. Maintain readable schedule text and bold venue names.
+- Navigation: compact top bar with Schedules and Configuration, a clear active tab and a small version label. Schedules remains the first page.
+- Actions: black #000000 pill-shaped primary buttons with white labels; quieter outlined or text secondary controls. Reference proportions are 14px semibold labels and approximately 40px-high primary controls, adapted for operational density.
+- Configuration: clearly grouped panels with restrained 8–16px rounding, consistent spacing and fine borders. Keep vehicles, venues, base settings, route order, archive and import/export easy to scan.
+- Spacing: use a consistent 4px-based scale with compact 8–24px working gaps; prioritise useful table width and visible work over marketing-style whitespace.
+- Colour: keep surrounding navigation/forms neutral so schedule row semantics and user-facing warnings remain distinguishable.
+- Do not reproduce the marketing site's 96px hero, huge section gaps, code-demo windows, decorative class-name annotations or decorative gutters at the expense of working space. No landing-page layout is required.
+- Outlook copy remains a bordered, coloured table with the existing four columns and formatting. Do not copy the surrounding app navigation, panels, buttons or other interface decoration.
+
 ## 23. Copying/forecast
 Copy day per date. Copy all schedules copies ENTIRE selected range inclusive, chronologically, including empty dates displaying “No stops scheduled”, not merely visible cards or a fixed week. Copy all schedules excludes warnings because warnings are user-facing. Include current runs, external activity and base jobs as appropriate. Copy current edited plan without regeneration.
 The paste target is Outlook.
@@ -214,6 +230,9 @@ Actual formatted tables required: borders, headings, backgrounds, bold sites, wr
 - 15:00 base job blocks 14:00–16:00; Remove returns to bucket.
 - External table Change run is fully bidirectional.
 - Day/all copy retains formatted current plan, no edit controls; all includes every selected date; empty dates show “No stops scheduled”; warnings excluded from copy-all.
+- App navigation and configuration follow the white, thin-ruled, near-black design direction with compact controls and no marketing hero.
+- Schedule colours, four-column structure, borders and bold sites remain intact despite the neutral app interface.
+- Outlook output retains schedule formatting and excludes surrounding interface decoration.
 
 ## 25. Remaining decisions
 Lunch duration is RESOLVED: one hour.
@@ -234,7 +253,8 @@ Copy target is RESOLVED: Outlook.
 Copy-all warnings are RESOLVED: excluded.
 Empty-date text is RESOLVED: “No stops scheduled”.
 Built-in providers are RESOLVED: Uber, KIS and Live Event cannot be edited or deleted; additional providers are user-created.
+Interface design direction is RESOLVED: adapt the supplied Tailwind CSS style reference to a compact desktop app; preserve screenshot-based operational tables and Outlook output separately.
 Still open: public-holiday provider/coverage years/regional handling; actual dump sample and exact header/first-data-row structure; full schedule backup file format/schema; Outlook HTML rendering details; exact one-week default end date; exact route reinsertion after archive restore; base-job duration editability and automatic insertion relative to lunch; vehicle run-block ordering clarification.
 
 ## 26. Sources and implementation status
-Requirements conversation dated 10 November 2026; supplied paste.txt VBA; supplied image.jpeg schedule reference. This document is the specification, not a claim that these features have been implemented. No repository write or deployment is performed by producing this document.
+Requirements conversation dated 10–11 November 2026; supplied paste.txt VBA; supplied image.jpeg schedule reference; supplied Tailwind CSS — Style Reference (pasted_text_1794338130.txt) dated 11 November 2026. This document is the specification, not a claim that these features or styles have been implemented. Committing this specification does not implement or deploy the app.

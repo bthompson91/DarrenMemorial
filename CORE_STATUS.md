@@ -1,11 +1,13 @@
-# Standalone core development status
+# Integrated production build
 
-Run the baseline tests with `node core-tests.cjs`.
+index.html now loads planner.js and scheduler.js. The historical core.js and core-tests.cjs are not loaded by the app.
 
-The original 12 tests passed in Node.js during development on 11 November 2026. They exercise selected pre-v0.8 core behaviours, not the full browser app. Some lunch scenarios in this baseline suite reflect the earlier rules and must be revised for v0.8.
+The scheduler has 13 Node regression tests for v0.8 timing, finished-driver lunch exclusion, fixed commitments, drop-off fallback, dates, availability and parsing. The workflow runs these and JavaScript syntax validation before deployment.
 
-`core.js` is not loaded by `index.html`. Its data model uses direction/reference/centre fields rather than the prototype's kind/ref/time fields; integration requires an explicit adapter or migration.
+This replaces the earlier partial production entry point. Existing prototype localStorage uses the same key; direction/phase fields are normalised on load. Export current backups before editing operational work.
 
-Known gaps: first stop still defaults to 09:00; finished morning-only drivers still affect lunch; no unlocked-task packing around future fixed commitments; no all-drop-offs morning fallback; no full venue/vehicle CRUD or default route UI; no holiday dataset; incomplete backup validation; no browser or Outlook verification. Blank-source identities currently depend on input position and require stable matching before integration.
+No full browser end-to-end test or real Outlook paste test has been performed. This is an integrated operational candidate, not a claim of complete Feature Bible acceptance. Source returns classification, split-placement edge cases and backup validation need further acceptance coverage. Venue-name edits do not rewrite the original source dump. Blank-source record matching may be ambiguous.
 
-Do not describe this commit as a feature-complete app or a deployed v0.8 scheduler. The Feature Bible v0.8 is normative; this development code does not supersede it.
+Holiday data is bundled by GitHub Actions where installation succeeds; failed holiday installation is shown in the app as unavailable, not represented as no holidays. Dataset source and attribution: https://github.com/commenthol/date-holidays (ISC code / CC BY-SA 3.0 data). Package metadata and relevant license files are retained with the deployment where available. Coverage depends on the dataset; newly announced and lunar-calendar holidays need official verification.
+
+Deployment is successful only when GitHub Actions reports success. GitHub Pages may require Settings > Pages > Source: GitHub Actions; committing this workflow does not establish the setting or prove a live deployment.

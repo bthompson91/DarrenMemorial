@@ -1,4 +1,4 @@
-name: Deploy committed prototype to production
+name: Test and deploy integrated planner
 on:
   push:
     branches: [main]
@@ -9,7 +9,7 @@ permissions:
   id-token: write
 concurrency:
   group: pages
-  cancel-in-progress: false
+  cancel-in-progress: true
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -17,22 +17,36 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Check out approved production commit
-        uses: actions/checkout@v4
-      - name: Prepare current static prototype
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test planner
+        run: node scheduler-tests.cjs && node --check planner.js
+      - name: Build static production files
         run: |
-          mkdir -p _site
-          cp index.html _site/index.html
-          cp ./*.js _site/
-          cp ./*.css _site/
+          mkdir -p _site/licenses
+          cp index.html planner.css planner.js scheduler.js holidays.js _site/
           touch _site/.nojekyll
+          if npm install --no-save --package-lock=false date-holidays@3 esbuild@0.25.0; then
+            if test -s node_modules/date-holidays/dist/umd.min.js; then
+              cp node_modules/date-holidays/dist/umd.min.js _site/holidays.js
+            else
+              printf "import Holidays from 'date-holidays'; window.Holidays = Holidays;" > holiday-entry.js
+              if ! ./node_modules/.bin/esbuild holiday-entry.js --bundle --platform=browser --outfile=_site/holidays.js; then
+                cp holidays.js _site/holidays.js
+                echo '::warning::Holiday bundle unavailable; planner remains usable with visible coverage warning'
+              fi
+            fi
+            find node_modules/date-holidays -maxdepth 1 -iname '*license*' -exec cp '{}' _site/licenses/ \;
+          else
+            echo '::warning::Holiday installation failed; planner remains usable with visible coverage warning'
+          fi
           test -s _site/index.html
-      - name: Configure Pages
-        uses: actions/configure-pages@v5
-      - name: Upload production files
-        uses: actions/upload-pages-artifact@v3
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
         with:
           path: _site
-      - name: Deploy to GitHub Pages
+      - name: Deploy production
         id: deployment
         uses: actions/deploy-pages@v4

@@ -1,0 +1,15 @@
+const C=require('./scheduler.js'),a=require('node:assert/strict');let n=0;function t(name,f){f();n++;console.log('PASS '+name)};
+t('first stop is 09:30',()=>a.equal(C.plan([{stops:[{id:'a',section:'am',lock:null}]}]).runs[0].rows[0].start,570));
+t('regional first stop still 09:30',()=>a.equal(C.plan([{stops:[{id:'a',section:'am',regional:true}]}]).runs[0].rows[0].start,570));
+t('morning-only ends without lunch',()=>{let r=C.plan([{stops:[{id:'a',section:'am'}]}]).runs[0];a.equal(r.lunchStart,null);a.equal(r.end,630)});
+t('finished late driver does not delay continuing drivers',()=>{let p=C.plan([{stops:[{id:'a',section:'am',lock:900}]},{stops:[{id:'b',section:'am'},{id:'c',section:'pm'}]}]);a.equal(p.lunchStart,630);a.equal(p.runs[0].lunchStart,null)});
+t('all dropoffs move to morning',()=>{let p=C.plan([{stops:[{id:'a',section:'pm'}]}]);a.equal(p.fallback,true);a.equal(p.runs[0].rows[0].start,570);a.equal(p.lunchStart,null)});
+t('fixed job never moves',()=>a.equal(C.plan([{stops:[{id:'j',job:true,centre:900,section:'pm'}]}]).runs[0].rows[0].start,840));
+t('unlocked work fills around fixed blocks',()=>{let p=C.plan([{stops:[{id:'j',job:true,centre:660},{id:'a',section:'am',regional:true},{id:'b',section:'am'}]}]);a.equal(p.runs[0].rows.find(x=>x.id==='a').start,720);a.equal(p.runs[0].rows.find(x=>x.id==='j').start,600)});
+t('overlapping fixed jobs remain and warn',()=>{let r=C.plan([{stops:[{id:'a',job:true,centre:900},{id:'b',job:true,centre:930}]}]).runs[0];a.equal(r.rows[0].start,840);a.equal(r.rows[1].start,870);a.ok(r.warnings.length)});
+t('no global fallback when any morning work exists',()=>a.equal(C.plan([{stops:[{id:'a',section:'am'}]},{stops:[{id:'b',section:'pm'}]}]).fallback,false));
+t('date validity and unrestricted range',()=>{a.equal(C.date('09-11-2026'),'2026-11-09');a.equal(C.validDate('2026-02-30'),false);a.equal(C.dates('2026-01-01','2027-12-31').length,730)});
+t('external weekdays',()=>{a.equal(C.available({id:'kis',builtin:true},'2026-11-14'),false);a.equal(C.available({id:'uber',builtin:true},'2026-11-14'),true)});
+t('fallback priority',()=>a.equal(C.allocate({type:'Truck',vehicle:'x'},[{id:'c',type:'Truck',days:[3]},{id:'r',type:'Truck',rental:true,days:[3]}],'2026-11-11'),'r'));
+t('consolidation and multiline rows',()=>{function row(time,kind,ref,site='Venue'){let c=Array(29).fill('');Object.assign(c,{0:'true',4:time,5:'Transfer',6:kind,7:ref,8:'Example',9:'11-11-2026',11:site,16:'Reserved',20:'Address\nSecond line'});return c.join('\t')}let p=C.parse([row('11:00','Ship','T1'),row('09:00','Ship','T1'),row('14:00','Receive','T1'),row('09:00','Prep','T2')].join('\n'),[]);a.equal(p.items.length,2);a.equal(p.items[0].time,540);a.equal(p.items[0].sources.length,2);a.equal(p.errors.length,0)});
+console.log(JSON.stringify({passed:n}));

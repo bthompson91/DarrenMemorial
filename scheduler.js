@@ -8,8 +8,9 @@ function plan(input){
  let parts=runs.map(r=>{
   const fixed=r.stops.filter(s=>s.job||s.lock!=null).map(s=>({id:s.id,s,start:s.job?s.centre-60:s.lock,end:(s.job?s.centre-60:s.lock)+len(s)}));
   const rows=[...fixed],blocks=[...fixed];
+  for(const s of r.stops.filter(s=>!s.job&&s.lock==null&&s.follow)){const f=rows.find(x=>x.id===s.follow);if(!f)continue;const t=place(f.end,len(s),blocks),x={id:s.id,s,start:t,end:t+len(s)};rows.push(x);blocks.push(x);}
   let cursor=570;
-  for(const s of r.stops.filter(s=>!s.job&&s.lock==null&&s.section==='am')){
+  for(const s of r.stops.filter(s=>!s.job&&s.lock==null&&s.section==='am'&&!s.follow)){
    const t=place(cursor,len(s),blocks),x={id:s.id,s,start:t,end:t+len(s)};rows.push(x);blocks.push(x);cursor=x.end;
   }
   let morning=rows.filter(x=>x.s.section==='am'&&!x.s.job);
@@ -34,9 +35,8 @@ function plan(input){
   const blocks=[...r.blocks];
   if(hasLunch)blocks.push({start:lunch,end:lunch+60});
   let cursor=hasLunch?lunch+90:r.morning.length?r.arrival:lunch===null?570:lunch+90;
-  for(const s of r.pm.filter(s=>!s.job&&s.lock==null)){
-   const t=place(cursor,len(s),blocks),x={id:s.id,s,start:t,end:t+len(s)};
-   r.rows.push(x);blocks.push(x);cursor=x.end;
+  for(const s of r.pm.filter(s=>!s.job&&s.lock==null&&!s.follow)){
+   const t=place(cursor,len(s),blocks),x={id:s.id,s,start:t,end:t+len(s)};r.rows.push(x);blocks.push(x);cursor=x.end;
   }
   r.rows.sort((a,b)=>a.start-b.start||a.end-b.end);
   r.lunchStart=hasLunch?lunch:null;

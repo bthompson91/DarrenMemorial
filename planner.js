@@ -36,7 +36,8 @@ function reorder(s, step) {
 
   if (!run) return;
 
-  const ordered = run.rows
+  // Use the intended input order, not the time-sorted rendered rows.
+  const ordered = run.stops
     .map(row => S.stops.find(stop => stop.id === row.id))
     .filter(Boolean);
 
@@ -45,24 +46,24 @@ function reorder(s, step) {
 
   if (from < 0 || !target) return;
 
-  // Remove the moved stop, then insert it beside the visible neighbour.
   ordered.splice(from, 1);
 
   const targetIndex = ordered.indexOf(target);
   ordered.splice(step < 0 ? targetIndex : targetIndex + 1, 0, s);
 
-  // Persist the new relative order for this vehicle/date.
-  const otherStops = S.stops.filter(stop =>
-    !ordered.includes(stop)
-  );
-
+  const otherStops = S.stops.filter(stop => !ordered.includes(stop));
   S.stops = [...otherStops, ...ordered];
 
-  // Match the section of the stop it was moved beside.
-  s.section = target.section;
+  // Determine AM/PM from the shared lunch boundary, not the target stop.
+  const targetRow = run.rows.find(row => row.id === target.id);
+  const afterLunch =
+    plan.lunchEnd !== null &&
+    targetRow &&
+    targetRow.start >= plan.lunchEnd;
+
+  s.section = afterLunch ? 'pm' : 'am';
   s.edited = true;
 
-  // Keep linked pickup/drop-off stops in the same section.
   const syncLinked = stop => {
     if (!stop) return;
 

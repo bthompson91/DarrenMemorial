@@ -30,7 +30,57 @@ function route(v,phase){return S.config.venues.filter(q=>!q.archived&&q.vehicle=
 function routeCell(q,v,phase){return q?`<div class="route-item"><span>${E(q.name)}</span><span class="route-actions">${btn('↑','route',JSON.stringify([v.id,phase,q.name,-1]),'Move venue up')}${btn('↓','route',JSON.stringify([v.id,phase,q.name,1]),'Move venue down')}</span></div>`:'';}
 function renderConfig(){const regions=S.config.state?holidayList('getRegions',S.config.country,S.config.state):{};let out=`<section><h2>Location and backup</h2><div class="toolbar"><label>Country <select data-config="country">${selectOptions(Object.entries({...COUNTRIES,...holidayList('getCountries')}),S.config.country)}</select></label><label>State / territory <select data-config="state">${selectOptions([['','National'],...Object.entries(states(S.config.country))],S.config.state)}</select></label>${Object.keys(regions).length?`<label>Region <select data-config="region">${selectOptions([['','All applicable subdivision holidays'],...Object.entries(regions)],S.config.region)}</select></label>`:''}${btn('Export configuration','exportConfig')}${btn('Import configuration','importConfig')}</div><p class="fine-print">Public-holiday flags only. Holiday data: date-holidays, ISC code / CC BY-SA 3.0 data. <a href="https://github.com/commenthol/date-holidays">Source and attribution</a>. State selection works even when holiday data cannot load.</p></section><section><div class="toolbar"><h2>Vehicles</h2>${btn('Add vehicle / provider','vehicle')}</div><table class="config-table"><thead><tr><th>Name</th><th>Type</th><th>Registration / ownership</th><th>Available days</th><th>Unavailable periods</th><th>Actions</th></tr></thead><tbody>`;for(const v of S.config.vehicles)out+=`<tr><td>${E(v.name)}</td><td>${E(v.type)}</td><td>${E(v.reg||'')} ${['Courier','Freight'].includes(v.type)?'Provider':v.rental?'Rental':'Company'}</td><td>${E((v.days||[]).map(x=>DAYS[x]).join(', '))}</td><td>${E((v.off||[]).map(p=>p.join(' — ')).join('; '))}</td><td class="actions">${v.builtin?'Built-in; locked':btn('Edit','vehicle',v.id)+(!v.rental&&['Truck','Van'].includes(v.type)?btn('Unavailable periods','off',v.id):'')+btn('Delete','deleteVehicle',v.id)}</td></tr>`;out+='</tbody></table></section><section><div class="toolbar"><h2>Venues</h2>'+btn('Add venue','venue')+'</div><table class="config-table"><thead><tr><th>Venue</th><th>Onsite contact</th><th>Type</th><th>Default vehicle</th><th>Stops/day</th><th>Timing</th><th>PSA</th><th>Base</th><th>Actions</th></tr></thead><tbody>';for(const [i,q] of S.config.venues.entries())if(!q.archived)out+=`<tr><td>${E(q.name)}</td><td>${E(q.contact)}</td><td>${E(q.type)}</td><td>${E(vehicle(q.vehicle)?.name||'Unassigned')}</td><td>${q.combined?1:2}</td><td>${q.regional?'Regional':'City'}</td><td>${q.psa?'⚠ Yes':'No'}</td><td><input type="checkbox" data-base="${i}" aria-label="Base location: ${E(q.name)}" ${q.base?'checked':''}></td><td class="actions">${btn('Edit','venue',String(i))}${btn('Archive','archive',String(i))}</td></tr>`;out+='</tbody></table></section><section><h2>Default venue order</h2>';for(const v of S.config.vehicles.filter(v=>['Truck','Van'].includes(v.type)&&!v.rental)){let am=route(v,'am'),pm=v.same===false?route(v,'pm'):[];out+=`<h3>${E(v.name)}</h3><table class="route-table"><thead><tr><th>AM</th><th>PM <label class="same-label"><input type="checkbox" data-same="${E(v.id)}" ${v.same!==false?'checked':''}>Same as morning</label></th></tr></thead><tbody>`;for(let i=0;i<Math.max(am.length,pm.length,1);i++)out+=`<tr><td>${routeCell(am[i],v,'am')}</td><td>${v.same!==false?(i===0?'<span class="muted">Uses AM order</span>':''):routeCell(pm[i],v,'pm')}</td></tr>`;out+='</tbody></table>';}out+='</section><section><h2>Archived venues</h2><table class="config-table"><thead><tr><th>Venue</th><th>Contact</th><th>Actions</th></tr></thead><tbody>'+S.config.venues.map((q,i)=>q.archived?`<tr><td>${E(q.name)}</td><td>${E(q.contact)}</td><td>${btn('Restore','restoreVenue',String(i))}</td></tr>`:'').join('')+'</tbody></table></section>';return out;}
 function render(){document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.a===page));$('main').innerHTML=page==='schedules'?renderSchedule():renderConfig();if($('dump'))$('dump').oninput=()=>{S.dump=$('dump').value;save();};}
-function reorder(s,step){let a=S.stops.filter(x=>x.date===s.date&&x.vehicle===s.vehicle&&x.ids.length),i=a.indexOf(s),target=a[i+step];if(!target)return;let x=S.stops.indexOf(s),y=S.stops.indexOf(target);[S.stops[x],S.stops[y]]=[S.stops[y],S.stops[x]];const oldSection=s.section;s.section=target.section;target.section=oldSection;const sync=n=>{if(n.follow){const p=S.stops.find(q=>q.id===n.follow);if(p)n.section=p.section;}const c=S.stops.find(q=>q.follow===n.id);if(c)c.section=n.section;};sync(s);sync(target);s.edited=true;target.edited=true;}
+function reorder(s, step) {
+  const plan = dayPlan(s.date);
+  const run = plan.runs.find(run => run.id === s.vehicle);
+
+  if (!run) return;
+
+  const ordered = run.rows
+    .map(row => S.stops.find(stop => stop.id === row.id))
+    .filter(Boolean);
+
+  const from = ordered.indexOf(s);
+  const target = ordered[from + step];
+
+  if (from < 0 || !target) return;
+
+  // Remove the moved stop, then insert it beside the visible neighbour.
+  ordered.splice(from, 1);
+
+  const targetIndex = ordered.indexOf(target);
+  ordered.splice(step < 0 ? targetIndex : targetIndex + 1, 0, s);
+
+  // Persist the new relative order for this vehicle/date.
+  const otherStops = S.stops.filter(stop =>
+    !ordered.includes(stop)
+  );
+
+  S.stops = [...otherStops, ...ordered];
+
+  // Match the section of the stop it was moved beside.
+  s.section = target.section;
+  s.edited = true;
+
+  // Keep linked pickup/drop-off stops in the same section.
+  const syncLinked = stop => {
+    if (!stop) return;
+
+    if (stop.follow) {
+      const parent = S.stops.find(q => q.id === stop.follow);
+      if (parent) stop.section = parent.section;
+    }
+
+    const child = S.stops.find(q => q.follow === stop.id);
+    if (child) child.section = stop.section;
+  };
+
+  syncLinked(s);
+  syncLinked(target);
+
+  save();
+  render();
+}
 function validate(x,kind){if(!x||x.format!=='darren-live'||x.version!==2||x.kind!==kind)throw Error('Unsupported backup format/type');const data=x.data,c=kind==='schedule'?data.config:data;if(!c||!Array.isArray(c.vehicles)||!Array.isArray(c.venues))throw Error('Invalid configuration');let ids=new Set(),names=new Set();for(const v of c.vehicles){if(typeof v.id!=='string'||ids.has(v.id)||!v.name||!['Truck','Van','Courier','Freight'].includes(v.type)||!Array.isArray(v.days)||v.days.some(d=>!Number.isInteger(d)||d<0||d>6))throw Error('Invalid vehicle');ids.add(v.id);if(['Truck','Van'].includes(v.type)&&!v.rental&&!v.reg)throw Error('Company registration missing');for(const p of v.off||[])if(!C.validDate(p[0])||!C.validDate(p[1])||p[0]>p[1])throw Error('Invalid unavailable period');if(v.start&&!C.validDate(v.start)||v.end&&!C.validDate(v.end)||v.start&&v.end&&v.start>v.end)throw Error('Invalid rental dates');}for(const q of c.venues){if(!q.name||names.has(q.name)||!['Truck','Van'].includes(q.type))throw Error('Invalid venue');names.add(q.name);if(typeof q.psa!=='boolean')q.psa=q.psa==='true';if(q.vehicle){let v=c.vehicles.find(v=>v.id===q.vehicle);if(!v||v.rental||v.type!==q.type)throw Error('Invalid default assignment');}}for(const b of B){let v=c.vehicles.find(v=>v.id===b.id);if(!v||v.name!==b.name||v.type!==b.type||!v.builtin)throw Error('Built-in providers changed');}if(kind==='schedule'){if(!Array.isArray(data.activities)||!Array.isArray(data.stops)||!C.validDate(data.from)||!C.validDate(data.to)||data.from>data.to)throw Error('Invalid schedule');let aid=new Set(),sid=new Set(),owned=new Set();for(const a of data.activities){if(!a.id||aid.has(a.id)||!C.validDate(a.date)||!['Ship','Receive'].includes(a.kind)||!Number.isInteger(a.time)||a.time<0||a.time>=1440)throw Error('Invalid activity');aid.add(a.id);}for(const s of data.stops){if(!s.id||sid.has(s.id)||!C.validDate(s.date)||!Array.isArray(s.ids)||!['am','pm'].includes(s.section)||s.lock!==null&&(!Number.isInteger(s.lock)||s.lock<0||s.lock>=1440)||s.vehicle&&!ids.has(s.vehicle))throw Error('Invalid stop');sid.add(s.id);for(const i of s.ids){if(!aid.has(i)||owned.has(i)||data.activities.find(a=>a.id===i).date!==s.date)throw Error('Invalid stop membership');owned.add(i);}}for(const s of data.stops)if(s.follow!==undefined&&!sid.has(s.follow))throw Error('Invalid follow reference');if(owned.size!==data.activities.filter(a=>!a.localBase).length)throw Error('Unassigned activity membership');}return structuredClone(data);}
 function exportFile(kind){let data=kind==='schedule'?S:S.config,url=URL.createObjectURL(new Blob([JSON.stringify({format:'darren-live',version:2,kind,data},null,2)],{type:'application/json'})),a=document.createElement('a');a.href=url;a.download='milk-run-'+kind+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),2000);}
 async function copy(dates){let holder=document.createElement('div');for(const date of dates){let node=$('day-'+date)?.cloneNode(true);if(!node)continue;node.querySelectorAll('[data-edit],[data-warning],button,input,select,.psa-flag').forEach(n=>n.remove());node.querySelectorAll('.locked-row').forEach(n=>n.classList.remove('locked-row'));node.querySelectorAll('.time-value').forEach(n=>n.replaceWith(document.createTextNode(n.textContent)));node.querySelectorAll('td,th,caption').forEach(n=>{n.style.border='1px solid #000';n.style.padding='5px';});node.querySelectorAll('th').forEach(n=>n.style.backgroundColor='#c8c8c8');let h=document.createElement('h2');h.textContent=dayLabel(date);holder.append(h,node);}let html=holder.innerHTML,text=Array.from(holder.children).map(n=>n.innerText||n.textContent).join('\n');try{if(navigator.clipboard&&navigator.clipboard.write&&window.ClipboardItem&&window.isSecureContext){await navigator.clipboard.write([new ClipboardItem({'text/html':new Blob([html],{type:'text/html'}),'text/plain':new Blob([text],{type:'text/plain'})})]);return;}}catch(e){}

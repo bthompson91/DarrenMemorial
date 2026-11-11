@@ -7,17 +7,26 @@ function plan(input){
  if(fallback)for(const r of runs)for(const s of r.stops)if(!s.job&&s.lock==null)s.section='am';
  let parts=runs.map(r=>{
   const fixed=r.stops.filter(s=>s.job||s.lock!=null).map(s=>({id:s.id,s,start:s.job?s.centre-60:s.lock,end:(s.job?s.centre-60:s.lock)+len(s)}));
-  const rows=[...fixed],blocks=[...fixed];
-  for(const s of r.stops.filter(s=>!s.job&&s.lock==null&&s.follow)){const f=rows.find(x=>x.id===s.follow);if(!f)continue;const t=place(f.end,len(s),blocks),x={id:s.id,s,start:t,end:t+len(s)};rows.push(x);blocks.push(x);}
+  const rows=[...fixed],blocks=[...fixed],warnings=[];
+  const followers=r.stops.filter(s=>!s.job&&s.lock==null&&s.follow),placed=new Set();
   let cursor=570;
   for(const s of r.stops.filter(s=>!s.job&&s.lock==null&&s.section==='am'&&!s.follow)){
    const t=place(cursor,len(s),blocks),x={id:s.id,s,start:t,end:t+len(s)};rows.push(x);blocks.push(x);cursor=x.end;
+  }
+  let progress=true;
+  while(progress){progress=false;
+   for(const s of followers){
+    if(placed.has(s.id))continue;
+    const f=rows.find(x=>x.id===s.follow);
+    if(!f)continue;
+    const t=place(f.end,len(s),blocks),x={id:s.id,s,start:t,end:t+len(s)};rows.push(x);blocks.push(x);placed.add(s.id);progress=true;
+   }
   }
   let morning=rows.filter(x=>x.s.section==='am'&&!x.s.job);
   let arrival=morning.length?Math.max(...morning.map(x=>x.end+ret(x.s))):null,changed=true;
   while(changed&&arrival!==null){changed=false;for(const x of fixed)if(!morning.includes(x)&&x.start<arrival){morning.push(x);arrival=Math.max(arrival,x.end+ret(x.s));changed=true;}}
   const pm=r.stops.filter(s=>!morning.some(x=>x.id===s.id));
-  return {...r,rows,morning,pm,arrival,blocks,fixed};
+  return {...r,rows,morning,pm,arrival,blocks,fixed,warnings,followers,placed};
  });
  const participating=parts.filter(r=>r.morning.length&&r.pm.length);
  let lunch=participating.length?Math.max(...participating.map(r=>r.arrival)):null;
@@ -38,6 +47,21 @@ function plan(input){
   for(const s of r.pm.filter(s=>!s.job&&s.lock==null&&!s.follow)){
    const t=place(cursor,len(s),blocks),x={id:s.id,s,start:t,end:t+len(s)};r.rows.push(x);blocks.push(x);cursor=x.end;
   }
+  let progress=true;
+  while(progress){progress=false;
+   for(const s of r.followers){
+    if(r.placed.has(s.id))continue;
+    const f=r.rows.find(x=>x.id===s.follow);
+    if(!f)continue;
+    const t=place(f.end,len(s),blocks),x={id:s.id,s,start:t,end:t+len(s)};r.rows.push(x);blocks.push(x);r.placed.add(s.id);progress=true;
+   }
+  }
+  for(const s of r.followers){
+   if(r.placed.has(s.id))continue;
+   const base=s.section==='pm'?cursor:(r.arrival??570);
+   const t=place(base,len(s),blocks),x={id:s.id,s,start:t,end:t+len(s)};r.rows.push(x);blocks.push(x);r.placed.add(s.id);
+   r.warnings.push('Follow-up placed without its parent: '+s.id);
+  }
   r.rows.sort((a,b)=>a.start-b.start||a.end-b.end);
   r.lunchStart=hasLunch?lunch:null;
   r.lunchEnd=hasLunch?lunch+60:null;
@@ -45,7 +69,6 @@ function plan(input){
   r.end=r.rows.length?Math.max(...r.rows.map(x=>x.end+ret(x.s))):(hasLunch?lunch+60:r.start);
   r.returnMorning=r.arrival;
   r.returnFinal=r.end;
-  r.warnings=[];
   for(let i=0;i<r.fixed.length;i++)for(let j=i+1;j<r.fixed.length;j++)if(r.fixed[i].start<r.fixed[j].end&&r.fixed[j].start<r.fixed[i].end)r.warnings.push('Fixed commitments overlap: '+r.fixed[i].id+' / '+r.fixed[j].id);
   if(hasLunch&&r.fixed.some(x=>x.start<lunch+60&&x.end>lunch))r.warnings.push('Generated lunch overlaps fixed commitment');
   if(hasLunch&&lunch-r.start>240)r.warnings.push('Lunch starts more than four hours into shift');

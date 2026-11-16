@@ -6,6 +6,7 @@ A local, offline web app that replaces the Excel/VBA Milk Run workflow.
 - Venue, contact, vehicle and run-order configuration is stored in the browser's `localStorage`.
 - Configuration can be exported to and imported from a JSON file.
 - The generated schedule can be downloaded as CSV.
+- Upload the transfer CSV on the Schedules page to download an RTF booklet for each scheduled vehicle and day. Stops are matched by transfer order ID (ignoring leading zeroes in its numeric part) and use the scheduled stop time. Transfers for a venue share a page; each new venue starts a page. Return transfers are paired by incrementing the transfer ID and reversing the route, using the CSV return date. Missing transfer rows are flagged with an R2 warning without stopping the download.
 - No Dump data, configuration, or generated schedule is uploaded to any server.
 
 ## Run it

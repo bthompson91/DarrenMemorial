@@ -177,7 +177,7 @@ async function action(a,v){
  }
  if(a==='uberRtf'){
   if(!s||s.vehicle!=='uber')throw Error('Uber stop is no longer available.');
-  const [stopPage]=C.transferBooklet([s],S.activities,S.transferRows,s.date,'uber',stop=>stopTime(stop),stop=>colour(stop));
+  const [stopPage]=C.transferBooklet([s],S.activities,S.transferRows,s.date,'uber',stop=>stopTime(stop),stop=>colour(stop),true);
   if(!stopPage)throw Error('No transfer data found for this Uber stop.');
   downloadCourierRtf(s,stopPage);message('Uber transfer RTF downloaded.');return;
  }

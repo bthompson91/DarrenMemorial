@@ -111,32 +111,33 @@ function downloadTransferBooklet(pages,date,runVehicle,scheduleTable){
  const caption=scheduleCopy.querySelector('caption')?.innerText.trim();
  if(!caption)throw Error('Could not read the vehicle schedule title for the booklet.');
  const titleLines=doc.splitTextToSize(caption,pageWidth-margin*2);
- doc.setFont('helvetica','bold');doc.setFontSize(14);
+ doc.setFont('helvetica','bold');doc.setFontSize(16);doc.setTextColor(0,0,0);
  doc.text(titleLines,pageWidth/2,13,{align:'center'});
  const scheduleHead=[...scheduleCopy.tHead.rows[0].cells].map(cell=>cell.innerText.trim());
  const scheduleRows=[...scheduleCopy.tBodies[0].rows];
  const scheduleBody=scheduleRows.map(row=>[...row.cells].map(cell=>cell.innerText.trim()));
  const rgb=value=>{let match=/^#([a-f\d]{6})$/i.exec(value);if(match)return [0,2,4].map(i=>parseInt(match[1].slice(i,i+2),16));match=/(\d+),\s*(\d+),\s*(\d+)/.exec(value);return match?match.slice(1).map(Number):null;};
- doc.autoTable({head:[scheduleHead],body:scheduleBody,startY:13+titleLines.length*7,margin:{left:margin,right:margin,bottom:margin},theme:'grid',styles:{font:'helvetica',fontSize:8,cellPadding:1.5,overflow:'linebreak',valign:'top',lineColor:[85,85,85],lineWidth:.2},headStyles:{fillColor:[232,232,232],textColor:[20,20,20],fontStyle:'bold'},columnStyles:{0:{cellWidth:'wrap'},1:{cellWidth:'wrap'},3:{cellWidth:'wrap'}},didParseCell(data){if(data.section!=='body')return;const source=scheduleRows[data.row.index],fill=rgb(source.style.backgroundColor);if(fill)data.cell.styles.fillColor=fill;if(fill&&fill[0]===0&&fill[1]===89&&fill[2]===138){data.cell.styles.textColor=[255,255,255];data.cell.styles.fontStyle='bold';}}});
+ doc.autoTable({head:[scheduleHead],body:scheduleBody,startY:13+titleLines.length*8,margin:{left:margin,right:margin,bottom:margin},theme:'grid',styles:{font:'helvetica',fontSize:10,textColor:[0,0,0],cellPadding:2,overflow:'linebreak',valign:'top',lineColor:[0,0,0],lineWidth:.3},headStyles:{fillColor:[255,255,255],textColor:[0,0,0],fontStyle:'bold'},columnStyles:{0:{cellWidth:'wrap'},1:{cellWidth:'wrap'},3:{cellWidth:'wrap'}},didParseCell(data){if(data.section!=='body')return;const source=scheduleRows[data.row.index],fill=rgb(source.style.backgroundColor);if(fill)data.cell.styles.fillColor=fill;if(fill&&fill[0]===0&&fill[1]===89&&fill[2]===138)data.cell.styles.fillColor=[184,212,229];}});
  const drawVenueHeader=page=>{
-  const width=pageWidth-margin*2,venueLines=doc.splitTextToSize(page.venue,width),timing=page.stops.map(s=>`${s.direction} ${clock(s.time)}`).join(' | '),stopLines=doc.splitTextToSize(`${page.direction.toUpperCase()} STOP - ESTIMATED TIME${page.stops.length>1?'S':''} ${timing}`,width);
-  let y=10;doc.setFont('helvetica','bold');doc.setFontSize(18);doc.text(venueLines,pageWidth/2,y,{align:'center'});y+=venueLines.length*7;
-  doc.setFontSize(10);doc.text(stopLines,pageWidth/2,y,{align:'center'});y+=stopLines.length*4.5+2;
-  doc.text(`${dayLabel(date)} - ${vehicleName}`,pageWidth/2,y,{align:'center'});y+=5;doc.setDrawColor(119,119,119);doc.line(margin,y,pageWidth-margin,y);return y+4;
+  const width=pageWidth-margin*2,venueLines=doc.splitTextToSize(page.venue,width),timing=page.stops.map(s=>`${s.direction} ${clock(s.time)}`).join(' | '),stopLines=doc.splitTextToSize(`${page.direction.toUpperCase()} STOP - ESTIMATED TIME${page.stops.length>1?'S':''} ${timing}`,width),detailsLines=doc.splitTextToSize(`${dayLabel(date)} - ${vehicleName}`,width),top=7,titleY=12,stopY=titleY+venueLines.length*8,detailsY=stopY+stopLines.length*5+2,bottom=detailsY+detailsLines.length*5+3,fill=rgb(page.color)||[255,255,255];
+  doc.setFillColor(...fill);doc.setDrawColor(0,0,0);doc.setLineWidth(.3);doc.rect(margin,top,width,bottom-top,'FD');doc.setTextColor(0,0,0);
+  doc.setFont('helvetica','bold');doc.setFontSize(20);doc.text(venueLines,pageWidth/2,titleY,{align:'center'});
+  doc.setFontSize(12);doc.text(stopLines,pageWidth/2,stopY,{align:'center'});
+  doc.setFontSize(11);doc.text(detailsLines,pageWidth/2,detailsY,{align:'center'});return bottom+4;
  };
  for(const page of pages){
   doc.addPage();let y=drawVenueHeader(page);
-  const tableOptions={margin:{top:y,left:margin,right:margin,bottom:margin},willDrawPage:()=>drawVenueHeader(page),styles:{font:'helvetica',fontSize:8,cellPadding:1.5,overflow:'linebreak',valign:'top'}};
-  if(page.warnings.length){doc.autoTable({...tableOptions,startY:y,columns:[{header:'',dataKey:'warning'}],body:page.warnings.map(w=>[{content:`MISSING TRANSFER: ${w.id}\n${w.text}`,styles:{fillColor:[255,245,214],lineColor:[183,121,0],lineWidth:.3,cellPadding:3}}])});y=doc.lastAutoTable.finalY+4;}
+  const tableOptions={margin:{top:y,left:margin,right:margin,bottom:margin},willDrawPage:()=>drawVenueHeader(page),styles:{font:'helvetica',fontSize:10,textColor:[0,0,0],cellPadding:2,overflow:'linebreak',valign:'top'}};
+  if(page.warnings.length){doc.autoTable({...tableOptions,startY:y,columns:[{header:'',dataKey:'warning'}],body:page.warnings.map(w=>[{content:`MISSING TRANSFER: ${w.id}\n${w.text}`,styles:{fillColor:[255,245,214],textColor:[0,0,0],lineColor:[0,0,0],lineWidth:.3,cellPadding:3,fontSize:10}}])});y=doc.lastAutoTable.finalY+4;}
   for(const order of page.orders){
    if(y>pageHeight-margin-38){doc.addPage();y=drawVenueHeader(page);}
-   doc.autoTable({...tableOptions,startY:y,theme:'plain',columnStyles:{0:{cellWidth:38},2:{cellWidth:22},4:{cellWidth:10}},styles:{font:'helvetica',fontSize:9,cellPadding:{top:1,bottom:1,left:2,right:2},overflow:'linebreak',lineWidth:0,valign:'top'},body:[
+   doc.autoTable({...tableOptions,startY:y,theme:'plain',columnStyles:{0:{cellWidth:38},2:{cellWidth:22},4:{cellWidth:10}},styles:{font:'helvetica',fontSize:11,textColor:[0,0,0],cellPadding:{top:1,bottom:1,left:2,right:2},overflow:'linebreak',lineWidth:0,valign:'top'},body:[
     [{content:'Transfer Order ID:',styles:{fontStyle:'bold'}},{content:order.id,colSpan:4}],
     [{content:'From Site:',styles:{fontStyle:'bold'}},order.fromSite,{content:'To Site:',styles:{fontStyle:'bold'}},order.toSite,''],
     [{content:'Transfer Description:',styles:{fontStyle:'bold'}},{content:order.description,colSpan:4}]
    ]});
    y=doc.lastAutoTable.finalY+2;
-   doc.autoTable({...tableOptions,startY:y,head:[['Product ID','Item Description','Qty','Prep Date','Return Date']],body:order.items.map(item=>[item.productId,item.itemDescription,item.quantity,displayDate(item.date),displayDate(item.returnDate)]),theme:'grid',styles:{font:'helvetica',fontSize:8,cellPadding:1.5,overflow:'linebreak',valign:'top',lineColor:[85,85,85],lineWidth:.2},headStyles:{fillColor:[232,232,232],textColor:[20,20,20],fontStyle:'bold'},columnStyles:{0:{cellWidth:32},2:{cellWidth:18},3:{cellWidth:29},4:{cellWidth:29}},rowPageBreak:'avoid'});
+   doc.autoTable({...tableOptions,startY:y,head:[['Product ID','Item Description','Qty','Prep Date','Return Date']],body:order.items.map(item=>[item.productId,item.itemDescription,item.quantity,displayDate(item.date),displayDate(item.returnDate)]),theme:'grid',styles:{font:'helvetica',fontSize:10,textColor:[0,0,0],cellPadding:2,overflow:'linebreak',valign:'top',lineColor:[0,0,0],lineWidth:.3},headStyles:{fillColor:[255,255,255],textColor:[0,0,0],fontStyle:'bold'},columnStyles:{0:{cellWidth:32},2:{cellWidth:18},3:{cellWidth:29},4:{cellWidth:29}},rowPageBreak:'avoid'});
    y=doc.lastAutoTable.finalY+5;
   }
  }
@@ -162,7 +163,7 @@ async function action(a,v){
   f.click();return;
  }
  if(a==='booklet'){
-  const [date,vehicleId]=JSON.parse(v),pages=C.transferBooklet(S.stops,S.activities,S.transferRows,date,vehicleId,stop=>stopTime(stop));
+  const [date,vehicleId]=JSON.parse(v),pages=C.transferBooklet(S.stops,S.activities,S.transferRows,date,vehicleId,stop=>stopTime(stop),stop=>colour(stop));
   if(!pages.length)throw Error('No scheduled transfer stops found for this vehicle and day.');
   const scheduleTable=Array.from(document.querySelectorAll('table.schedule')).find(table=>table.querySelector('button[data-a="booklet"]')?.dataset.v===v);
   if(!scheduleTable)throw Error('Could not find this vehicle schedule to include in the booklet.');

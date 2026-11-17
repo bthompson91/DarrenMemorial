@@ -25,8 +25,10 @@ jobs:
         run: node scheduler-tests.cjs && node --check planner.js
       - name: Build static production files
         run: |
-          mkdir -p _site/licenses
+          mkdir -p _site/licenses _site/vendor
           cp index.html planner.css planner.js scheduler.js holidays.js _site/
+          cp vendor/jspdf.umd.min.js vendor/jspdf.plugin.autotable.min.js _site/vendor/
+          cp vendor/jspdf.LICENSE vendor/jspdf-autotable.LICENSE _site/licenses/
           touch _site/.nojekyll
           if npm install --no-save --package-lock=false date-holidays@3 esbuild@0.25.0; then
             if test -s node_modules/date-holidays/dist/umd.min.js; then
@@ -43,6 +45,8 @@ jobs:
             echo '::warning::Holiday installation failed; planner remains usable with visible coverage warning'
           fi
           test -s _site/index.html
+          test -s _site/vendor/jspdf.umd.min.js
+          test -s _site/vendor/jspdf.plugin.autotable.min.js
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

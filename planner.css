@@ -2,6 +2,7 @@
 .schedule button{background:#ffffff!important;color:#030712!important;border:1px solid #aeb4bc!important;border-radius:8px!important;padding:6px 12px!important;font:600 12px/1 system-ui,sans-serif!important;cursor:pointer;transition:background-color .15s ease;}.schedule button:hover:not(:disabled){background:#f2f2f3!important;}.schedule button:disabled{opacity:.5;cursor:not-allowed;}.schedule .unstaffed-flag{display:inline-block;margin-left:6px;padding:2px 8px;border-radius:9999px;background:#e2e6ea!important;color:#030712!important;border:1px solid #aeb4bc;font:600 10px/1 system-ui,sans-serif;}
 .schedule-day-heading{position:sticky;top:0;z-index:2;background:#fff;margin:-10px -10px 8px;padding:8px 10px;border-bottom:1px solid #ddd}
 .schedule-day-heading h2{font-size:16pt}
+.schedule.vehicle-run caption{background:#000;color:#fff}
 .period-table{table-layout:auto}.period-table th{background:#f2f2f3}.period-table td{white-space:nowrap}.period-table input[type=date]{min-width:145px}.period-table input[aria-label$=reason]{width:100%;min-width:140px}
 .source{display:none}.source[open]{display:block}
 #status.copy-toast{position:fixed;top:50%;left:50%;z-index:10;max-width:calc(100vw - 32px);padding:12px 20px;border-radius:8px;transform:translate(-50%,-50%);background:#030712;color:#fff;text-align:center;box-shadow:0 4px 20px #0004;pointer-events:none;animation:copy-toast 3s ease forwards}

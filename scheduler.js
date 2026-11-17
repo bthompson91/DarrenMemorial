@@ -122,6 +122,10 @@ function transferBooklet(stops,activities,transferRows,date,vehicleId,timeForSto
  }
  return pages.filter(page=>page.orders.length||page.warnings.length);
 }
+function courierSheetData(page){
+ const routes=new Set(page.orders.map(order=>JSON.stringify([order.fromSite,order.toSite]))),route=routes.size===1?page.orders[0]:null,reliable=page.warnings.length===0&&page.orders.length>0&&routes.size===1;
+ return {reliable,orderIds:[...new Set([...page.orders.map(order=>order.id),...page.warnings.map(warning=>warning.id).filter(id=>id&&id!=='Unknown transfer')])],fromSite:route?.fromSite||'',toSite:route?.toSite||'',items:reliable?page.orders.flatMap(order=>order.items):[]};
+}
 function available(v,d){const w=new Date(d+'T12:00:00Z').getUTCDay();if(v.builtin)return v.id==='uber'||w>0&&w<6;return v.days.includes(w)&&(!v.start||d>=v.start)&&(!v.end||d<=v.end)&&!(v.off||[]).some(p=>d>=p[0]&&p[1]>=d);}
 function allocate(q,vs,d){if(!q)return '';const all=vs.filter(v=>['Truck','Van'].includes(v.type)&&available(v,d));return (all.find(v=>v.id===q.vehicle)||all.find(v=>v.rental&&v.type===q.type)||all.find(v=>!v.rental&&v.type===q.type)||all.find(v=>v.rental&&v.type!==q.type))?.id||'';}
-const api={plan,place,moveStop,breakStop,unlinkStop,mergeStops,dates,resetRange,date,validDate,parse,parseTransferCsv,transferBooklet,available,allocate};if(typeof module!=='undefined')module.exports=api;root.MilkRunCore=api;})(globalThis);
+const api={plan,place,moveStop,breakStop,unlinkStop,mergeStops,dates,resetRange,date,validDate,parse,parseTransferCsv,transferBooklet,courierSheetData,available,allocate};if(typeof module!=='undefined')module.exports=api;root.MilkRunCore=api;})(globalThis);

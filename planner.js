@@ -45,7 +45,7 @@ function renderSchedule(){
    out+=table(runName+' — Approx. timings '+label,body).replace('</caption>',btn('Download PDF','booklet',JSON.stringify([date,r.id]))+'</caption>');
   }
   const external=ss.filter(s=>ext(s.vehicle)),jobs=ss.filter(s=>s.job&&!s.vehicle),unassigned=ss.filter(s=>!s.job&&!s.vehicle);
-  if(external.length)out+='<h3>External activity</h3>'+table(label+' — external methods',external.map(s=>stopRow(s,'',E(vehicle(s.vehicle)?.name)+(C.available(vehicle(s.vehicle),date)?'':'<span data-warning> — unavailable on this day</span>'),'#bfe9e5')).join(''),['Method','Site','Transfers','Onsite Contact']);
+  if(external.length)out+='<h3>External activity</h3>'+table(label+' — external methods',external.map(s=>stopRow(s,'',E(vehicle(s.vehicle)?.name)+(C.available(vehicle(s.vehicle),date)?'':'<span data-warning> — unavailable on this day</span>')+(s.vehicle==='uber'?'<br>'+btn('Download Word','uberDocx',s.id,'Download courier transfer document'):''),'#bfe9e5')).join(''),['Method','Site','Transfers','Onsite Contact']);
   if(jobs.length)out+='<h3>Unassigned base jobs</h3>'+table(label+' — unassigned base jobs',jobs.map(s=>stopRow(s,clock(stopTime(s)))).join(''));
   if(unassigned.length)out+='<h3>Unassigned work</h3>'+table(label+' — unresolved work',unassigned.map(s=>stopRow(s,'Unassigned')).join(''));
   out+='</div></section>';
@@ -98,6 +98,35 @@ function reorder(s, step) {
 function validate(x,kind){if(!x||x.format!=='darren-live'||x.version!==2||x.kind!==kind)throw Error('Unsupported backup format/type');const data=x.data,c=kind==='schedule'?data.config:data;if(!c||!Array.isArray(c.vehicles)||!Array.isArray(c.venues))throw Error('Invalid configuration');let ids=new Set(),names=new Set();for(const v of c.vehicles){if(typeof v.id!=='string'||ids.has(v.id)||!v.name||!['Truck','Van','Courier','Freight'].includes(v.type)||!Array.isArray(v.days)||v.days.some(d=>!Number.isInteger(d)||d<0||d>6))throw Error('Invalid vehicle');ids.add(v.id);if(['Truck','Van'].includes(v.type)&&!v.rental&&!v.reg)throw Error('Company registration missing');for(const p of v.off||[])if(!C.validDate(p[0])||!C.validDate(p[1])||p[0]>p[1])throw Error('Invalid unavailable period');if(v.start&&!C.validDate(v.start)||v.end&&!C.validDate(v.end)||v.start&&v.end&&v.start>v.end)throw Error('Invalid rental dates');}for(const q of c.venues){if(!q.name||names.has(q.name)||!['Truck','Van'].includes(q.type))throw Error('Invalid venue');names.add(q.name);if(typeof q.unstaffedVenue!=='boolean')q.unstaffedVenue=q.psa===true||q.psa==='true';delete q.psa;if(q.vehicle){let v=c.vehicles.find(v=>v.id===q.vehicle);if(!v||v.rental||v.type!==q.type)throw Error('Invalid default assignment');}}for(const b of B){let v=c.vehicles.find(v=>v.id===b.id);if(!v||v.name!==b.name||v.type!==b.type||!v.builtin)throw Error('Built-in providers changed');}if(kind==='schedule'){if(!Array.isArray(data.activities)||!Array.isArray(data.stops)||!C.validDate(data.from)||!C.validDate(data.to)||data.from>data.to)throw Error('Invalid schedule');let aid=new Set(),sid=new Set(),owned=new Set();for(const a of data.activities){if(!a.id||aid.has(a.id)||!C.validDate(a.date)||!['Ship','Receive'].includes(a.kind)||!Number.isInteger(a.time)||a.time<0||a.time>=1440)throw Error('Invalid activity');aid.add(a.id);}for(const s of data.stops){if(!s.id||sid.has(s.id)||!C.validDate(s.date)||!Array.isArray(s.ids)||!['am','pm'].includes(s.section)||s.lock!==null&&(!Number.isInteger(s.lock)||s.lock<0||s.lock>=1440)||s.departureOverride!==undefined&&(!s.job||!Number.isInteger(s.departureOverride)||s.departureOverride<0||s.departureOverride>=1440)||s.vehicle&&!ids.has(s.vehicle))throw Error('Invalid stop');sid.add(s.id);for(const i of s.ids){if(!aid.has(i)||owned.has(i)||data.activities.find(a=>a.id===i).date!==s.date)throw Error('Invalid stop membership');owned.add(i);}}for(const s of data.stops)if(s.follow!==undefined&&!sid.has(s.follow))throw Error('Invalid follow reference');if(owned.size!==data.activities.filter(a=>!a.localBase).length)throw Error('Unassigned activity membership');}return structuredClone(data);}
 function exportFile(kind){let data=kind==='schedule'?S:S.config,url=URL.createObjectURL(new Blob([JSON.stringify({format:'darren-live',version:2,kind,data},null,2)],{type:'application/json'})),a=document.createElement('a');a.href=url;a.download='milk-run-'+kind+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),2000);}
 function displayDate(value){return value?`${value.slice(8,10)}-${value.slice(5,7)}-${value.slice(0,4)}`:'';}
+async function downloadCourierDocx(stop,page){
+ const D=window.docx;
+ if(!D?.Document||!D?.Packer)throw Error('Word export library did not load. Reload the app and try again.');
+ const data=C.courierSheetData(page),border={style:D.BorderStyle.SINGLE,size:4,color:'000000'},borders={top:border,bottom:border,left:border,right:border},width=10466;
+ const paragraph=(text,bold=false,size=20)=>new D.Paragraph({spacing:{before:0,after:0},children:[new D.TextRun({text:String(text??''),font:'Arial',size,bold})]});
+ const cell=(text,bold=false,columnSpan)=>new D.TableCell({children:[paragraph(text,bold)],borders,margins:{top:80,bottom:80,left:100,right:100},...(columnSpan?{columnSpan}:{})});
+ const row=(cells,height,tableHeader=false)=>new D.TableRow({children:cells,...(height?{height:{value:height,rule:D.HeightRule.ATLEAST}}:{}),...(tableHeader?{tableHeader:true}:{})});
+ const contactAt=site=>site===stop.site?(stop.contact||venue(site)?.contact||''):(venue(site)?.contact||'');
+ const details=new D.Table({columnWidths:[2600,2633,2600,2633],width:{size:width,type:D.WidthType.DXA},rows:[
+  row([cell('From Site',true),cell(data.fromSite),cell('To Site',true),cell(data.toSite)]),
+  row([cell('From Site Address',true),cell(''),cell('To Site Address',true),cell('')]),
+  row([cell('From Site Contact',true),cell(contactAt(data.fromSite)),cell('To Site Contact',true),cell(contactAt(data.toSite))]),
+  row([cell('Transfer Order Number',true),cell(data.orderIds.join(', '),false,3)])
+ ]});
+ const items=data.reliable?data.items.map(item=>[item.productId,item.itemDescription,item.quantity,displayDate(item.date),displayDate(item.returnDate)]):[];
+ while(items.length<10)items.push(['','','','','']);
+ const itemTable=new D.Table({columnWidths:[1300,4550,700,1958,1958],width:{size:width,type:D.WidthType.DXA},rows:[
+  row(['Product ID','Item Description','Qty','Prep Date','Return Date'].map(text=>cell(text,true)),undefined,true),
+  ...items.map(values=>row(values.map(value=>cell(value)),620))
+ ]});
+ const doc=new D.Document({sections:[{properties:{page:{size:{width:11906,height:16838,orientation:D.PageOrientation.PORTRAIT},margin:{top:720,right:720,bottom:720,left:720}}},children:[
+  new D.Paragraph({alignment:D.AlignmentType.CENTER,spacing:{before:0,after:180},children:[new D.TextRun({text:'ENCORE UBER COURIER',font:'Arial',size:28,bold:true})]}),
+  details,
+  new D.Paragraph({spacing:{before:180,after:80},children:[new D.TextRun({text:'Items',font:'Arial',size:22,bold:true})]}),
+  itemTable
+ ]}]});
+ const blob=await D.Packer.toBlob(doc),url=URL.createObjectURL(blob),anchor=document.createElement('a'),safeSite=stop.site.replace(/[^a-z0-9]+/gi,'-').replace(/^-|-$/g,'').toLowerCase()||'stop',stopKey=String(stop.id||'stop').slice(0,8);
+ anchor.href=url;anchor.download=`uber-transfer-${stop.date}-${safeSite}-${clock(stopTime(stop)).replace(':','')}-${stopKey}.docx`;document.body.append(anchor);anchor.click();anchor.remove();setTimeout(()=>URL.revokeObjectURL(url),2000);
+}
 function downloadTransferBooklet(pages,date,runVehicle,scheduleTable){
  const {jsPDF}=window.jspdf||{};
  if(!jsPDF||!jsPDF.API.autoTable)throw Error('PDF export libraries did not load. Reload the app and try again.');
@@ -119,7 +148,7 @@ function downloadTransferBooklet(pages,date,runVehicle,scheduleTable){
  const rgb=value=>{let match=/^#([a-f\d]{6})$/i.exec(value);if(match)return [0,2,4].map(i=>parseInt(match[1].slice(i,i+2),16));match=/(\d+),\s*(\d+),\s*(\d+)/.exec(value);return match?match.slice(1).map(Number):null;};
  doc.autoTable({head:[scheduleHead],body:scheduleBody,startY:13+titleLines.length*8,margin:{left:margin,right:margin,bottom:margin},theme:'grid',styles:{font:'helvetica',fontSize:10,textColor:[0,0,0],cellPadding:2,overflow:'linebreak',valign:'top',lineColor:[0,0,0],lineWidth:.3},headStyles:{fillColor:[255,255,255],textColor:[0,0,0],fontStyle:'bold'},columnStyles:{0:{cellWidth:'wrap'},1:{cellWidth:'wrap'},3:{cellWidth:'wrap'}},didParseCell(data){if(data.section!=='body')return;const source=scheduleRows[data.row.index],fill=rgb(source.style.backgroundColor);if(fill)data.cell.styles.fillColor=fill;if(fill&&fill[0]===0&&fill[1]===89&&fill[2]===138)data.cell.styles.fillColor=[184,212,229];}});
  const drawVenueHeader=page=>{
-  const width=pageWidth-margin*2,venueLines=doc.splitTextToSize(page.venue,width),timing=page.stops.map(s=>`${s.direction} ${clock(s.time)}`).join(' | '),stopLines=doc.splitTextToSize(`${page.direction.toUpperCase()} STOP - ESTIMATED TIME${page.stops.length>1?'S':''} ${timing}`,width),detailsLines=doc.splitTextToSize(`${dayLabel(date)} - ${vehicleName}`,width),top=7,titleY=12,stopY=titleY+venueLines.length*8,detailsY=stopY+stopLines.length*5+2,bottom=detailsY+detailsLines.length*5+3,fill=rgb(page.color)||[255,255,255];
+  const width=pageWidth-margin*2,venueLines=doc.splitTextToSize(page.venue,width),timing=page.stops.map(s=>`${s.direction} ${clock(s.time)}`).join(' | '),stopLines=doc.splitTextToSize(`${page.direction.toUpperCase()} STOP - ESTIMATED TIME${page.stops.length>1?'S':''} ${timing}`,width),detailsLines=doc.splitTextToSize(`${dayLabel(date)} - ${vehicleName}`,width),top=7,titleY=14,stopY=titleY+venueLines.length*8,detailsY=stopY+stopLines.length*5+2,bottom=detailsY+detailsLines.length*5+3,fill=rgb(page.color)||[255,255,255];
   doc.setFillColor(...fill);doc.setDrawColor(0,0,0);doc.setLineWidth(.3);doc.rect(margin,top,width,bottom-top,'FD');doc.setTextColor(0,0,0);
   doc.setFont('helvetica','bold');doc.setFontSize(20);doc.text(venueLines,pageWidth/2,titleY,{align:'center'});
   doc.setFontSize(12);doc.text(stopLines,pageWidth/2,stopY,{align:'center'});
@@ -168,6 +197,12 @@ async function action(a,v){
   const scheduleTable=Array.from(document.querySelectorAll('table.schedule')).find(table=>table.querySelector('button[data-a="booklet"]')?.dataset.v===v);
   if(!scheduleTable)throw Error('Could not find this vehicle schedule to include in the booklet.');
   downloadTransferBooklet(pages,date,vehicle(vehicleId),scheduleTable);message('PDF booklet downloaded.');return;
+ }
+ if(a==='uberDocx'){
+  if(!s||s.vehicle!=='uber')throw Error('Uber stop is no longer available.');
+  const [stopPage]=C.transferBooklet([s],S.activities,S.transferRows,s.date,'uber',stop=>stopTime(stop),stop=>colour(stop));
+  if(!stopPage)throw Error('No transfer data found for this Uber stop.');
+  await downloadCourierDocx(s,stopPage);message('Uber transfer Word document downloaded.');return;
  }
  if(a==='resetDay'){if(!confirm('Reset this day? All manual changes for this date will be discarded and the day regenerated using current defaults.'))return;resetDays([v]);message('Day reset to default generator settings.');return;}
  if(a==='resetSchedule'){const dates=C.dates(S.from,S.to);if(!confirm('Reset the entire schedule? All manual changes in the applied date range will be discarded and those days regenerated using current defaults. Days outside the range, source data, and configuration will be kept.'))return;resetDays(dates);message('Entire schedule reset to default generator settings.');return;}

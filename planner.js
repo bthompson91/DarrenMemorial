@@ -42,7 +42,7 @@ function renderSchedule(){
    let body=marker(r.start,base,'Start of Run'),lunch=false,returned=false;
    for(const x of r.rows){if(r.lunchStart!==null&&!lunch&&x.start>=r.lunchEnd){if(!returned&&r.arrival!==null){body+=marker(r.arrival,base,'Return / unload');returned=true;}body+=marker(r.lunchStart,base,'Lunch until '+clock(r.lunchEnd),'#dcdcdc');body+=marker(r.lunchEnd,base,'Start Afternoon Run');lunch=true;}let s=ss.find(s=>s.id===x.id);body+=stopRow(s,clock(x.start));}
    if(!returned&&r.arrival!==null)body+=marker(r.arrival,base,'Return / unload');body+=marker(r.end,base,'End of Run');
-   out+=table(runName+' — Approx. timings '+label,body).replace('</caption>',btn('Download Booklet','booklet',JSON.stringify([date,r.id]))+'</caption>');
+   out+=table(runName+' — Approx. timings '+label,body).replace('</caption>',btn('Download PDF','booklet',JSON.stringify([date,r.id]))+'</caption>');
   }
   const external=ss.filter(s=>ext(s.vehicle)),jobs=ss.filter(s=>s.job&&!s.vehicle),unassigned=ss.filter(s=>!s.job&&!s.vehicle);
   if(external.length)out+='<h3>External activity</h3>'+table(label+' — external methods',external.map(s=>stopRow(s,'',E(vehicle(s.vehicle)?.name)+(C.available(vehicle(s.vehicle),date)?'':'<span data-warning> — unavailable on this day</span>'),'#bfe9e5')).join(''),['Method','Site','Transfers','Onsite Contact']);
@@ -97,37 +97,87 @@ function reorder(s, step) {
 }
 function validate(x,kind){if(!x||x.format!=='darren-live'||x.version!==2||x.kind!==kind)throw Error('Unsupported backup format/type');const data=x.data,c=kind==='schedule'?data.config:data;if(!c||!Array.isArray(c.vehicles)||!Array.isArray(c.venues))throw Error('Invalid configuration');let ids=new Set(),names=new Set();for(const v of c.vehicles){if(typeof v.id!=='string'||ids.has(v.id)||!v.name||!['Truck','Van','Courier','Freight'].includes(v.type)||!Array.isArray(v.days)||v.days.some(d=>!Number.isInteger(d)||d<0||d>6))throw Error('Invalid vehicle');ids.add(v.id);if(['Truck','Van'].includes(v.type)&&!v.rental&&!v.reg)throw Error('Company registration missing');for(const p of v.off||[])if(!C.validDate(p[0])||!C.validDate(p[1])||p[0]>p[1])throw Error('Invalid unavailable period');if(v.start&&!C.validDate(v.start)||v.end&&!C.validDate(v.end)||v.start&&v.end&&v.start>v.end)throw Error('Invalid rental dates');}for(const q of c.venues){if(!q.name||names.has(q.name)||!['Truck','Van'].includes(q.type))throw Error('Invalid venue');names.add(q.name);if(typeof q.unstaffedVenue!=='boolean')q.unstaffedVenue=q.psa===true||q.psa==='true';delete q.psa;if(q.vehicle){let v=c.vehicles.find(v=>v.id===q.vehicle);if(!v||v.rental||v.type!==q.type)throw Error('Invalid default assignment');}}for(const b of B){let v=c.vehicles.find(v=>v.id===b.id);if(!v||v.name!==b.name||v.type!==b.type||!v.builtin)throw Error('Built-in providers changed');}if(kind==='schedule'){if(!Array.isArray(data.activities)||!Array.isArray(data.stops)||!C.validDate(data.from)||!C.validDate(data.to)||data.from>data.to)throw Error('Invalid schedule');let aid=new Set(),sid=new Set(),owned=new Set();for(const a of data.activities){if(!a.id||aid.has(a.id)||!C.validDate(a.date)||!['Ship','Receive'].includes(a.kind)||!Number.isInteger(a.time)||a.time<0||a.time>=1440)throw Error('Invalid activity');aid.add(a.id);}for(const s of data.stops){if(!s.id||sid.has(s.id)||!C.validDate(s.date)||!Array.isArray(s.ids)||!['am','pm'].includes(s.section)||s.lock!==null&&(!Number.isInteger(s.lock)||s.lock<0||s.lock>=1440)||s.departureOverride!==undefined&&(!s.job||!Number.isInteger(s.departureOverride)||s.departureOverride<0||s.departureOverride>=1440)||s.vehicle&&!ids.has(s.vehicle))throw Error('Invalid stop');sid.add(s.id);for(const i of s.ids){if(!aid.has(i)||owned.has(i)||data.activities.find(a=>a.id===i).date!==s.date)throw Error('Invalid stop membership');owned.add(i);}}for(const s of data.stops)if(s.follow!==undefined&&!sid.has(s.follow))throw Error('Invalid follow reference');if(owned.size!==data.activities.filter(a=>!a.localBase).length)throw Error('Unassigned activity membership');}return structuredClone(data);}
 function exportFile(kind){let data=kind==='schedule'?S:S.config,url=URL.createObjectURL(new Blob([JSON.stringify({format:'darren-live',version:2,kind,data},null,2)],{type:'application/json'})),a=document.createElement('a');a.href=url;a.download='milk-run-'+kind+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),2000);}
-function rtfText(value){return String(value??'').split(/\r\n?|\n/).map(line=>line.replace(/\\/g,'\\\\').replace(/{/g,'\\{').replace(/}/g,'\\}').replace(/[^\x00-\x7F]/g,c=>{let code=c.charCodeAt(0);return `\\u${code>32767?code-65536:code}?`;})).join('\\line ');}
-function fitRtfColumn(values,min,max){return Math.min(max,Math.max(min,...values.map(value=>String(value||'').length*72+120)));}
-function rtfTableWidths(items){const product=fitRtfColumn(['Product ID',...items.map(x=>x.productId)],1000,1800),qty=fitRtfColumn(['Qty',...items.map(x=>x.quantity)],500,900),prep=fitRtfColumn(['Prep Date',...items.map(x=>displayDate(x.date))],1200,1400),returned=fitRtfColumn(['Return Date',...items.map(x=>displayDate(x.returnDate))],1200,1400);return [product,9550-product-qty-prep-returned,qty,prep,returned];}
-function rtfTableRow(cells,bold=false,widths){let edge=0;const borders=cells.map((_,i)=>{edge+=widths[i];return `\\clbrdrt\\brdrs\\brdrw5\\clbrdrl\\brdrs\\brdrw5\\clbrdrb\\brdrs\\brdrw5\\clbrdrr\\brdrs\\brdrw5\\cellx${edge}`;}).join('');return `\\trowd\\trgaph80\\trleft0${borders}`+cells.map(value=>`\\pard\\intbl\\f0\\fs18 ${bold?'\\b ':''}${rtfText(value)}${bold?'\\b0':''}\\cell`).join('')+'\\row';}
 function displayDate(value){return value?`${value.slice(8,10)}-${value.slice(5,7)}-${value.slice(0,4)}`:'';}
-function downloadTransferBooklet(pages,date,runVehicle){
+function downloadTransferBooklet(pages,date,runVehicle,scheduleTable){
+ const {jsPDF}=window.jspdf||{};
+ if(!jsPDF||!jsPDF.API.autoTable)throw Error('PDF export libraries did not load. Reload the app and try again.');
  const vehicleName=[runVehicle?.name,runVehicle?.reg].filter(Boolean).join(' ')||'Vehicle';
- let rtf='{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0 Arial;}}\\viewkind4\\paperw11906\\paperh16838';
- for(const [index,page] of pages.entries()){
-  if(index)rtf+='\\sect';
-  rtf+='\\sectd\\sbkpage\\pgwsxn11906\\pghsxn16838\\marglsxn1134\\margrsxn1134\\margtsxn1440\\margbsxn1134\\headery720';
-  const timing=page.stops.map(s=>`${s.direction} ${clock(s.time)}`).join(' | ');
-  rtf+=`{\\header\\pard\\qc\\b\\f0\\fs32 ${rtfText(page.venue)}\\par\\fs24 ${page.direction.toUpperCase()} STOP - ESTIMATED TIME${page.stops.length>1?'S':''} ${rtfText(timing)}\\par\\fs20 ${rtfText(dayLabel(date))} - ${rtfText(vehicleName)}\\par}`;
-  rtf+='\\pard\\sb240\\sa200\\b\\fs36 TRANSFER BOOKLET\\b0\\fs22\\par';
-  for(const warning of page.warnings){rtf+=`\\pard\\sb240\\sa80\\b\\fs26 MISSING TRANSFER: ${rtfText(warning.id)}\\b0\\fs22\\par\\pard\\sa120 ${rtfText(warning.text)}\\par`;}
+ const safeVehicle=vehicleName.replace(/[^a-z0-9]+/gi,'-').replace(/^-|-$/g,'').toLowerCase()||'vehicle';
+ const doc=new jsPDF({orientation:'landscape',unit:'mm',format:'a4',compress:true});
+ const pageWidth=doc.internal.pageSize.getWidth(),pageHeight=doc.internal.pageSize.getHeight(),margin=12;
+ doc.setProperties({title:`Milk Run Booklet - ${vehicleName} - ${date}`});
+ const scheduleCopy=scheduleTable.cloneNode(true);
+ scheduleCopy.querySelectorAll('[data-edit],[data-warning],button,input,select,.unstaffed-break').forEach(node=>node.remove());
+ const caption=scheduleCopy.querySelector('caption')?.innerText.trim();
+ if(!caption)throw Error('Could not read the vehicle schedule title for the booklet.');
+ const titleLines=doc.splitTextToSize(caption,pageWidth-margin*2);
+ doc.setFont('helvetica','bold');doc.setFontSize(14);
+ doc.text(titleLines,pageWidth/2,13,{align:'center'});
+ const scheduleHead=[...scheduleCopy.tHead.rows[0].cells].map(cell=>cell.innerText.trim());
+ const scheduleRows=[...scheduleCopy.tBodies[0].rows];
+ const scheduleBody=scheduleRows.map(row=>[...row.cells].map(cell=>cell.innerText.trim()));
+ const rgb=value=>{let match=/^#([a-f\d]{6})$/i.exec(value);if(match)return [0,2,4].map(i=>parseInt(match[1].slice(i,i+2),16));match=/(\d+),\s*(\d+),\s*(\d+)/.exec(value);return match?match.slice(1).map(Number):null;};
+ doc.autoTable({head:[scheduleHead],body:scheduleBody,startY:13+titleLines.length*7,margin:{left:margin,right:margin,bottom:margin},theme:'grid',styles:{font:'helvetica',fontSize:8,cellPadding:1.5,overflow:'linebreak',valign:'top',lineColor:[85,85,85],lineWidth:.2},headStyles:{fillColor:[232,232,232],textColor:[20,20,20],fontStyle:'bold'},columnStyles:{0:{cellWidth:'wrap'},1:{cellWidth:'wrap'},3:{cellWidth:'wrap'}},didParseCell(data){if(data.section!=='body')return;const source=scheduleRows[data.row.index],fill=rgb(source.style.backgroundColor);if(fill)data.cell.styles.fillColor=fill;if(fill&&fill[0]===0&&fill[1]===89&&fill[2]===138){data.cell.styles.textColor=[255,255,255];data.cell.styles.fontStyle='bold';}}});
+ const drawVenueHeader=page=>{
+  const width=pageWidth-margin*2,venueLines=doc.splitTextToSize(page.venue,width),timing=page.stops.map(s=>`${s.direction} ${clock(s.time)}`).join(' | '),stopLines=doc.splitTextToSize(`${page.direction.toUpperCase()} STOP - ESTIMATED TIME${page.stops.length>1?'S':''} ${timing}`,width);
+  let y=10;doc.setFont('helvetica','bold');doc.setFontSize(18);doc.text(venueLines,pageWidth/2,y,{align:'center'});y+=venueLines.length*7;
+  doc.setFontSize(10);doc.text(stopLines,pageWidth/2,y,{align:'center'});y+=stopLines.length*4.5+2;
+  doc.text(`${dayLabel(date)} - ${vehicleName}`,pageWidth/2,y,{align:'center'});y+=5;doc.setDrawColor(119,119,119);doc.line(margin,y,pageWidth-margin,y);return y+4;
+ };
+ for(const page of pages){
+  doc.addPage();let y=drawVenueHeader(page);
+  const tableOptions={margin:{top:y,left:margin,right:margin,bottom:margin},willDrawPage:()=>drawVenueHeader(page),styles:{font:'helvetica',fontSize:8,cellPadding:1.5,overflow:'linebreak',valign:'top'}};
+  if(page.warnings.length){doc.autoTable({...tableOptions,startY:y,columns:[{header:'',dataKey:'warning'}],body:page.warnings.map(w=>[{content:`MISSING TRANSFER: ${w.id}\n${w.text}`,styles:{fillColor:[255,245,214],lineColor:[183,121,0],lineWidth:.3,cellPadding:3}}])});y=doc.lastAutoTable.finalY+4;}
   for(const order of page.orders){
-   rtf+=`\\pard\\sb240\\sa80\\b\\fs26 TRANSFER ORDER ID: ${rtfText(order.id)}\\b0\\fs22\\par`;
-   rtf+=`\\pard\\tx1800\\sa40\\b Stop Type:\\b0\\tab ${rtfText(order.direction)} - ${clock(order.time)}\\par\\b From Site:\\b0\\tab ${rtfText(order.fromSite)}\\par\\b To Site:\\b0\\tab ${rtfText(order.toSite)}\\par\\b Transfer Description:\\b0\\tab ${rtfText(order.description)}\\par\\b Transfer Status:\\b0\\tab ${rtfText(order.status)}\\par`;
-   const widths=rtfTableWidths(order.items);
-   rtf+=rtfTableRow(['Product ID','Item Description','Qty','Prep Date','Return Date'],true,widths);
-   for(const item of order.items)rtf+=rtfTableRow([item.productId,item.itemDescription,item.quantity,displayDate(item.date),displayDate(item.returnDate)],false,widths);
+   if(y>pageHeight-margin-38){doc.addPage();y=drawVenueHeader(page);}
+   doc.autoTable({...tableOptions,startY:y,theme:'plain',columnStyles:{0:{cellWidth:38},2:{cellWidth:22},4:{cellWidth:10}},styles:{font:'helvetica',fontSize:9,cellPadding:{top:1,bottom:1,left:2,right:2},overflow:'linebreak',lineWidth:0,valign:'top'},body:[
+    [{content:'Transfer Order ID:',styles:{fontStyle:'bold'}},{content:order.id,colSpan:4}],
+    [{content:'From Site:',styles:{fontStyle:'bold'}},order.fromSite,{content:'To Site:',styles:{fontStyle:'bold'}},order.toSite,''],
+    [{content:'Transfer Description:',styles:{fontStyle:'bold'}},{content:order.description,colSpan:4}]
+   ]});
+   y=doc.lastAutoTable.finalY+2;
+   doc.autoTable({...tableOptions,startY:y,head:[['Product ID','Item Description','Qty','Prep Date','Return Date']],body:order.items.map(item=>[item.productId,item.itemDescription,item.quantity,displayDate(item.date),displayDate(item.returnDate)]),theme:'grid',styles:{font:'helvetica',fontSize:8,cellPadding:1.5,overflow:'linebreak',valign:'top',lineColor:[85,85,85],lineWidth:.2},headStyles:{fillColor:[232,232,232],textColor:[20,20,20],fontStyle:'bold'},columnStyles:{0:{cellWidth:32},2:{cellWidth:18},3:{cellWidth:29},4:{cellWidth:29}},rowPageBreak:'avoid'});
+   y=doc.lastAutoTable.finalY+5;
   }
-  rtf+='\\pard\\sa240\\par';
  }
- rtf+='}';
- const slug=vehicleName.replace(/[^a-z0-9]+/gi,'-').replace(/^-|-$/g,'').toLowerCase(),url=URL.createObjectURL(new Blob([rtf],{type:'application/rtf;charset=utf-8'})),a=document.createElement('a');
- a.href=url;a.download=`milk-run-booklet-${date}-${slug||'vehicle'}.rtf`;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2000);
+ const filename=`milk-run-booklet-${date}-${safeVehicle}.pdf`;
+ doc.save(filename);
 }
 async function copy(dates){let holder=document.createElement('div');for(const date of dates){let node=$('day-'+date)?.cloneNode(true);if(!node)continue;node.querySelectorAll('[data-edit],[data-warning],button,input,select,.unstaffed-flag,.unstaffed-break').forEach(n=>n.remove());node.querySelectorAll('.locked-row').forEach(n=>n.classList.remove('locked-row'));node.querySelectorAll('.time-value').forEach(n=>{let value=document.createElement('span');value.innerHTML=n.innerHTML;n.replaceWith(value);});node.querySelectorAll('table.schedule').forEach(table=>{let caption=table.querySelector('caption');if(caption&&table.tHead){let row=table.tHead.insertRow(0),heading=document.createElement('th');heading.colSpan=table.tHead.rows[1]?.cells.length||1;heading.textContent=caption.textContent;row.append(heading);caption.remove();}});node.querySelectorAll('td,th,caption').forEach(n=>{n.style.border='1px solid #000';n.style.padding='5px';});node.querySelectorAll('th').forEach(n=>n.style.backgroundColor='#c8c8c8');node.querySelectorAll('tr[style*="#00598a"] td').forEach(cell=>{cell.style.color='#fff';cell.style.fontWeight='700';});let tables=node.querySelectorAll('table.schedule');tables.forEach(table=>{table.style.width='max-content';table.style.tableLayout='auto';table.querySelectorAll('td,th').forEach(cell=>{cell.style.width='auto';cell.style.minWidth='0';});});for(let i=0;i<tables.length-1;i++)tables[i].after(document.createElement('br'));let h=document.createElement('h2');h.textContent=dayLabel(date);h.style.fontSize='16pt';holder.append(h,node);}holder.style.cssText='position:fixed;left:-10000px;top:0;visibility:hidden;width:max-content';document.body.append(holder);let tables=holder.querySelectorAll('table.schedule'),width=Math.max(0,...Array.from(tables,t=>t.getBoundingClientRect().width));tables.forEach(table=>table.style.width=width+'px');let html=holder.innerHTML,plain=holder.cloneNode(true);holder.remove();plain.style.whiteSpace='pre-line';plain.querySelectorAll('br').forEach(n=>n.replaceWith(document.createTextNode('\n')));let text=Array.from(plain.children).map(n=>n.innerText||n.textContent).join('\n');try{if(navigator.clipboard&&navigator.clipboard.write&&window.ClipboardItem&&window.isSecureContext){await navigator.clipboard.write([new ClipboardItem({'text/html':new Blob([html],{type:'text/html'}),'text/plain':new Blob([text],{type:'text/plain'})})]);return;}}catch(e){}
 let temp=document.createElement('textarea');temp.value=text;temp.style.position='fixed';temp.style.opacity='0';document.body.append(temp);temp.select();let ok=false;try{ok=document.execCommand('copy');}catch(e){}temp.remove();if(!ok)throw Error('Clipboard access was blocked. Use Ctrl+C / Cmd+C after selecting the schedule.');}
-async function action(a,v){let s=S.stops.find(s=>s.id===v);if(a==='schedules'||a==='configuration'){page=a;render();return;}if(a==='paste'){let text;try{if(!navigator.clipboard?.readText)throw Error('Unavailable');text=await navigator.clipboard.readText();}catch{let source=$('dump');source.closest('details').open=true;source.focus();message('Clipboard access was blocked. Paste into the source box with Ctrl+V, then choose Generate / reconcile.');return;}if(!text.trim()){message('Clipboard is empty; existing source data has not been changed.');return;}$('dump').value=text;generate();return;}if(a==='generate'){generate();return;}if(a==='transferCsv'){let f=document.createElement('input');f.type='file';f.accept='.csv,text/csv';f.onchange=async()=>{try{if(!f.files.length)return;let items=C.parseTransferCsv(await f.files[0].text());S.transferRows=items;save();render();message(`${items.length} transfer item rows loaded.`);}catch(e){message('Transfer CSV rejected; existing data unchanged: '+e.message);}};f.click();return;}if(a==='booklet'){const [date,vehicleId]=JSON.parse(v),pages=C.transferBooklet(S.stops,S.activities,S.transferRows,date,vehicleId,stop=>stopTime(stop));if(!pages.length)throw Error('No scheduled transfer stops found for this vehicle and day.');downloadTransferBooklet(pages,date,vehicle(vehicleId));message('Transfer booklet downloaded.');return;}if(a==='resetDay'){if(!confirm('Reset this day? All manual changes for this date will be discarded and the day regenerated using current defaults.'))return;resetDays([v]);message('Day reset to default generator settings.');return;}if(a==='resetSchedule'){const dates=C.dates(S.from,S.to);if(!confirm('Reset the entire schedule? All manual changes in the applied date range will be discarded and those days regenerated using current defaults. Days outside the range, source data, and configuration will be kept.'))return;resetDays(dates);message('Entire schedule reset to default generator settings.');return;}if(a==='range'){C.dates($('from').value,$('to').value);S.from=$('from').value;S.to=$('to').value;}if(a==='copy'||a==='copyAll'){await copy(a==='copy'?[v]:C.dates(S.from,S.to));message('Formatted schedules copied.');return;}if(a==='exportPlan'||a==='exportConfig'){exportFile(a==='exportPlan'?'schedule':'configuration');return;}if(a==='importPlan'||a==='importConfig'){const kind=a==='importPlan'?'schedule':'configuration',f=document.createElement('input');f.type='file';f.accept='.json';f.onchange=async()=>{try{if(!f.files.length)return;let x=validate(JSON.parse(await f.files[0].text()),kind);if(!confirm('Replace current '+kind+' with validated backup?'))return;if(kind==='schedule')S=x;else{S.config=x;for(const s of S.stops)if(s.vehicle&&!vehicle(s.vehicle))s.vehicle='';}S.config.vehicles=S.config.vehicles.filter(v=>!B.some(b=>b.id===v.id)).concat(structuredClone(B));save();render();message('Backup imported.');}catch(e){message('Import rejected; current data unchanged: '+e.message);}};f.click();return;}
+async function action(a,v){
+ let s=S.stops.find(s=>s.id===v);
+ if(a==='schedules'||a==='configuration'){page=a;render();return;}
+ if(a==='paste'){
+  let text;
+  try{if(!navigator.clipboard?.readText)throw Error('Unavailable');text=await navigator.clipboard.readText();}
+  catch{let source=$('dump');source.closest('details').open=true;source.focus();message('Clipboard access was blocked. Paste into the source box with Ctrl+V, then choose Generate / reconcile.');return;}
+  if(!text.trim()){message('Clipboard is empty; existing source data has not been changed.');return;}
+  $('dump').value=text;generate();return;
+ }
+ if(a==='generate'){generate();return;}
+ if(a==='transferCsv'){
+  let f=document.createElement('input');f.type='file';f.accept='.csv,text/csv';
+  f.onchange=async()=>{try{if(!f.files.length)return;let items=C.parseTransferCsv(await f.files[0].text());S.transferRows=items;save();render();message(`${items.length} transfer item rows loaded.`);}catch(e){message('Transfer CSV rejected; existing data unchanged: '+e.message);}};
+  f.click();return;
+ }
+ if(a==='booklet'){
+  const [date,vehicleId]=JSON.parse(v),pages=C.transferBooklet(S.stops,S.activities,S.transferRows,date,vehicleId,stop=>stopTime(stop));
+  if(!pages.length)throw Error('No scheduled transfer stops found for this vehicle and day.');
+  const scheduleTable=Array.from(document.querySelectorAll('table.schedule')).find(table=>table.querySelector('button[data-a="booklet"]')?.dataset.v===v);
+  if(!scheduleTable)throw Error('Could not find this vehicle schedule to include in the booklet.');
+  downloadTransferBooklet(pages,date,vehicle(vehicleId),scheduleTable);message('PDF booklet downloaded.');return;
+ }
+ if(a==='resetDay'){if(!confirm('Reset this day? All manual changes for this date will be discarded and the day regenerated using current defaults.'))return;resetDays([v]);message('Day reset to default generator settings.');return;}
+ if(a==='resetSchedule'){const dates=C.dates(S.from,S.to);if(!confirm('Reset the entire schedule? All manual changes in the applied date range will be discarded and those days regenerated using current defaults. Days outside the range, source data, and configuration will be kept.'))return;resetDays(dates);message('Entire schedule reset to default generator settings.');return;}
+ if(a==='range'){C.dates($('from').value,$('to').value);S.from=$('from').value;S.to=$('to').value;}
+ if(a==='copy'||a==='copyAll'){await copy(a==='copy'?[v]:C.dates(S.from,S.to));message('Formatted schedules copied.');return;}
+ if(a==='exportPlan'||a==='exportConfig'){exportFile(a==='exportPlan'?'schedule':'configuration');return;}
+ if(a==='importPlan'||a==='importConfig'){
+  const kind=a==='importPlan'?'schedule':'configuration',f=document.createElement('input');f.type='file';f.accept='.json';
+  f.onchange=async()=>{try{if(!f.files.length)return;let x=validate(JSON.parse(await f.files[0].text()),kind);if(!confirm('Replace current '+kind+' with validated backup?'))return;if(kind==='schedule')S=x;else{S.config=x;for(const s of S.stops)if(s.vehicle&&!vehicle(s.vehicle))s.vehicle='';}S.config.vehicles=S.config.vehicles.filter(v=>!B.some(b=>b.id===v.id)).concat(structuredClone(B));save();render();message('Backup imported.');}catch(e){message('Import rejected; current data unchanged: '+e.message);}};
+  f.click();return;
+ }
 if(a==='unknown'){let q=S.config.venues.find(q=>q.name===v);if(q)q.archived=false;else S.config.venues.push({name:v,type:'Truck',contact:'',vehicle:'',regional:false,combined:false,unstaffedVenue:false,base:false});page='configuration';reconcile();}
 if(a==='vehicle'){let q=vehicle(v)||{id:id(),name:'',type:'Truck',rental:false,reg:'',days:[1,2,3,4,5],off:[]};if(q.builtin)return;let x=await modal('Vehicle / provider',[{key:'name',label:'Name',value:q.name,required:true},{key:'type',label:'Type',options:['Truck','Van','Courier','Freight'].map(x=>[x,x]),value:q.type},{key:'ownership',label:'Ownership',options:[['company','Company-owned'],['rental','Rental']],value:q.rental?'rental':'company'},{key:'reg',label:'Registration',value:q.reg},{key:'days',label:'Available weekdays',type:'weekdays',value:q.days},{key:'start',label:'Rental start (rental only)',type:'date',value:q.start},{key:'end',label:'Rental end (rental only)',type:'date',value:q.end}]);if(!x)return;x.rental=['Truck','Van'].includes(x.type)&&x.ownership==='rental';x.days=x.days.split(',').filter(x=>x.trim()).map(Number);if(x.days.some(x=>!Number.isInteger(x)||x<0||x>6))throw Error('Invalid weekday');if(['Truck','Van'].includes(x.type)&&!x.rental&&!x.reg)throw Error('Company vehicle needs registration');if(!x.rental){x.start='';x.end='';}if(x.start&&x.end&&x.start>x.end)throw Error('Rental dates reversed');Object.assign(q,x);if(!v)S.config.vehicles.push(q);for(const n of S.config.venues)if(n.vehicle===q.id&&(q.rental||n.type!==q.type))n.vehicle='';}
 if(a==='deleteVehicle'){if(vehicle(v)?.builtin)return;if(!confirm('Delete '+vehicle(v)?.name+' and leave its assignments unassigned?'))return;S.config.vehicles=S.config.vehicles.filter(x=>x.id!==v);S.config.venues.forEach(q=>{if(q.vehicle===v)q.vehicle='';});S.stops.forEach(s=>{if(s.vehicle===v)s.vehicle='';});}

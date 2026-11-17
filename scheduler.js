@@ -91,10 +91,11 @@ function csvRecords(text){let records=[],row=[],value='',quoted=false;for(let i=
 function parseTransferCsv(text){const records=csvRecords(text.replace(/^\uFEFF/,''));if(!records.length)throw Error('Transfer CSV is empty');const header=records[0].map(x=>x.trim().toUpperCase()),columns=['TRANSFERORDERID','TRANSFERORDERDESCRIPTION','STATUS','FROMSITENAME','TOSITENAME','PRODUCT ID','ITEM DESCRIPTION','QUANTITY','PREP DATE','RETURNDATE'],indexes=Object.fromEntries(columns.map(name=>[name,header.indexOf(name)]));for(const name of columns)if(indexes[name]<0)throw Error('Transfer CSV is missing the '+name+' column');return records.slice(1).map((cells,i)=>{const value=name=>(cells[indexes[name]]||'').trim(),returnDate=value('RETURNDATE'),item={orderId:value('TRANSFERORDERID'),orderDescription:value('TRANSFERORDERDESCRIPTION'),status:value('STATUS'),fromSite:value('FROMSITENAME'),toSite:value('TOSITENAME'),productId:value('PRODUCT ID'),itemDescription:value('ITEM DESCRIPTION'),quantity:value('QUANTITY'),date:date(value('PREP DATE')),returnDate:returnDate?date(returnDate):''};if(!item.orderId||!item.fromSite||!item.toSite||!item.itemDescription||!item.quantity||!item.date||returnDate&&!item.returnDate)throw Error('Invalid transfer CSV row '+(i+2));return item;});}
 function transferKey(value){const id=String(value||'').trim(),match=/^(.*?)(\d+)$/.exec(id);return match?match[1]+match[2].replace(/^0+(?=\d)/,''):id;}
 function transfersWithReturns(rows){const all=rows.slice(),explicit=new Set(rows.map(r=>JSON.stringify([transferKey(r.orderId),r.date])));for(const row of rows){if(!row.returnDate)continue;const match=/^(.*?)(\d+)$/.exec(row.orderId);if(!match)throw Error('Cannot derive return transfer ID from '+row.orderId);const number=Number(match[2]);if(!Number.isSafeInteger(number))throw Error('Cannot derive return transfer ID from '+row.orderId);const orderId=match[1]+String(number+1).padStart(match[2].length,'0');if(explicit.has(JSON.stringify([transferKey(orderId),row.returnDate])))continue;all.push({...row,orderId,orderDescription:'Return: '+row.orderDescription,status:'Return (derived)',fromSite:row.toSite,toSite:row.fromSite,date:row.returnDate,returnDate:''});}return all;}
+function consolidateTransferItems(items){const merged=[],indexes=new Map();for(const item of items){const quantity=Number(item.quantity);if(!Number.isSafeInteger(quantity)){merged.push(item);continue;}const key=JSON.stringify([item.productId,item.itemDescription,item.date,item.returnDate]),index=indexes.get(key);if(index===undefined){indexes.set(key,merged.length);merged.push({...item,quantity:String(quantity)});continue;}const total=Number(merged[index].quantity)+quantity;if(Number.isSafeInteger(total))merged[index].quantity=String(total);else merged.push(item);}return merged;}
 function transferBooklet(stops,activities,transferRows,date,vehicleId,timeForStop){
- const availableRows=transfersWithReturns(transferRows),pages=new Map();
- const addPage=(stop)=>{if(!pages.has(stop.site))pages.set(stop.site,{venue:stop.site,direction:'',time:null,stops:[],orders:[],warnings:[],seen:new Set()});return pages.get(stop.site);};
- const scheduled=stops.filter(s=>s.date===date&&s.vehicle===vehicleId&&!s.job).sort((a,b)=>timeForStop(a)-timeForStop(b));
+ const availableRows=transfersWithReturns(transferRows),pages=[];
+ const addPage=(stop)=>{let page=pages[pages.length-1];if(!page||page.venue!==stop.site){page={venue:stop.site,direction:'',time:null,stops:[],orders:[],warnings:[],seen:new Set()};pages.push(page);}return page;};
+ const scheduled=stops.filter(s=>s.date===date&&s.vehicle===vehicleId&&!s.job&&s.ids.length).sort((a,b)=>timeForStop(a)-timeForStop(b));
  for(const stop of scheduled){
   const page=addPage(stop),time=timeForStop(stop);
   const addStop=(direction)=>{if(!page.stops.some(s=>s.direction===direction&&s.time===time))page.stops.push({direction,time});};
@@ -111,15 +112,15 @@ function transferBooklet(stops,activities,transferRows,date,vehicleId,timeForSto
    const seenKey=JSON.stringify([key,direction]);
    if(page.seen.has(seenKey))continue;
    page.seen.add(seenKey);
-   page.orders.push({id:rows[0].orderId,direction,time,fromSite:rows[0].fromSite,toSite:rows[0].toSite,description:rows[0].orderDescription,status:rows[0].status,items:rows});
+   page.orders.push({id:rows[0].orderId,direction,time,fromSite:rows[0].fromSite,toSite:rows[0].toSite,description:rows[0].orderDescription,status:rows[0].status,items:consolidateTransferItems(rows)});
   }
  }
- for(const page of pages.values()){
+ for(const page of pages){
   page.direction=[...new Set(page.stops.map(s=>s.direction))].join(' / ');
   page.time=page.stops[0]?.time??570;
   delete page.seen;
  }
- return [...pages.values()];
+ return pages.filter(page=>page.orders.length||page.warnings.length);
 }
 function available(v,d){const w=new Date(d+'T12:00:00Z').getUTCDay();if(v.builtin)return v.id==='uber'||w>0&&w<6;return v.days.includes(w)&&(!v.start||d>=v.start)&&(!v.end||d<=v.end)&&!(v.off||[]).some(p=>d>=p[0]&&p[1]>=d);}
 function allocate(q,vs,d){if(!q)return '';const all=vs.filter(v=>['Truck','Van'].includes(v.type)&&available(v,d));return (all.find(v=>v.id===q.vehicle)||all.find(v=>v.rental&&v.type===q.type)||all.find(v=>!v.rental&&v.type===q.type)||all.find(v=>v.rental&&v.type!==q.type))?.id||'';}

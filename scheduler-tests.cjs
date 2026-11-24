@@ -1,4 +1,4 @@
-const C=require('./scheduler.js'),CourierRtf=require('./courier-rtf.js'),zlib=require('node:zlib'),a=require('node:assert/strict');let n=0,pending=[];function t(name,f){const r=f();if(r&&typeof r.then==='function')pending.push(r.then(()=>{n++;console.log('PASS '+name);}));else{n++;console.log('PASS '+name);}};
+const C=require('./scheduler.js'),CourierRtf=C.courierRtf,zlib=require('node:zlib'),a=require('node:assert/strict');let n=0,pending=[];function t(name,f){const r=f();if(r&&typeof r.then==='function')pending.push(r.then(()=>{n++;console.log('PASS '+name);}));else{n++;console.log('PASS '+name);}};
 t('first stop is 09:30',()=>a.equal(C.plan([{stops:[{id:'a',section:'am',lock:null}]}]).runs[0].rows[0].start,570));
 t('regional first stop still 09:30',()=>a.equal(C.plan([{stops:[{id:'a',section:'am',regional:true}]}]).runs[0].rows[0].start,570));
 t('morning-only ends after city return interval without lunch',()=>{let r=C.plan([{stops:[{id:'a',section:'am'}]}]).runs[0];a.equal(r.lunchStart,null);a.equal(r.end,600)});

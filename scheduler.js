@@ -123,10 +123,12 @@ function parseTransferReport(rows,bases){
 // Picklist (.rtf) for base jobs: one order becomes a Delivery (Ship) job and
 // a Pick up (Receive) job at the customer base, ref = order number.
 // EA Online Webinars orders are excluded entirely, as in parse(). S-Assign
-// (subrental) items ride on both jobs for the runsheet; Transfer items are
-// returned as a lookup keyed by transfer order + product, so the booklet can
-// highlight them under their kit with the order they serve. Kit headers group
-// the rows under them; kit headers with no rows contribute nothing.
+// (subrental) items ride on both jobs for the runsheet; the full item list
+// rides on both jobs too, so the booklet can give the job its own page.
+// Transfer items are also returned as a lookup keyed by transfer order +
+// product, so the booklet can highlight them under their kit with the order
+// they serve. Kit headers group the rows under them; kit headers with no
+// rows contribute nothing.
 const cp1252Decoder=new TextDecoder('windows-1252');
 function rtfCellText(raw){
  let s=String(raw).replace(/\\'([0-9a-fA-F]{2})/g,(m,hex)=>cp1252Decoder.decode(new Uint8Array([parseInt(hex,16)])));
@@ -173,9 +175,10 @@ function parsePicklist(text){
   if(!order.cust){errors.push('Order '+order.orderNo+' has no customer name');continue;}
   const whenD=parseWhen(order.delivery),whenP=parseWhen(order.pickup);
   const sAssign=[...order.items.values()].filter(i=>i.status==='S-Assign').map(i=>({qty:i.qty,description:i.description,transferPo:i.transferPo}));
+  const items=[...order.items.values()].map(i=>({status:i.status,productId:i.productId,qty:i.qty,description:i.description,transferPo:i.transferPo,kit:i.kit?i.kit.name:''}));
   for(const [kind,when] of [['Ship',whenD],['Receive',whenP]]){
    if(!when){errors.push('Order '+order.orderNo+' is missing a '+(kind==='Ship'?'Delivery':'Pick up')+' time');continue;}
-   jobs.push({id:JSON.stringify([order.orderNo,when.date,kind,true]),ref:order.orderNo,date:when.date,kind,site:order.cust,managed:'',time:when.time,job:true,localBase:false,description:order.desc,sources:[],sAssign});
+   jobs.push({id:JSON.stringify([order.orderNo,when.date,kind,true]),ref:order.orderNo,date:when.date,kind,site:order.cust,managed:'',time:when.time,job:true,localBase:false,description:order.desc,sources:[],sAssign,items});
   }
   for(const item of order.items.values()){
    if(item.status!=='Transfer')continue;
@@ -220,6 +223,19 @@ function transferBooklet(stops,activities,transferRows,date,vehicleId,timeForSto
    const items=consolidateTransferItems(rows).map(item=>{const hit=picklist?.[JSON.stringify([key,item.productId])];return hit?{...item,kit:hit.kit,picklistOrder:hit.orderNo,picklistDesc:hit.orderDesc}:item;});
    const picklistOrders=[...new Map(items.filter(i=>i.picklistOrder).map(i=>[i.picklistOrder,i.picklistDesc])).entries()].map(([orderNo,orderDesc])=>({orderNo,orderDesc}));
    page.orders.push({id:rows[0].orderId,direction,time,fromSite:rows[0].fromSite,toSite:rows[0].toSite,description:rows[0].orderDescription,status:rows[0].status,items,picklistOrders});
+  }
+ }
+ // Base jobs with picklist items get their own page, like a transfer page,
+ // but only in the vehicle booklet (never the Uber courier form, which uses
+ // ignoreTransferDate). Jobs with no items (e.g. Dump jobs) get no page.
+ if(!ignoreTransferDate){
+  const jobStops=stops.filter(s=>s.date===date&&s.vehicle===vehicleId&&s.job&&s.ids.length).sort((a,b)=>timeForStop(a)-timeForStop(b));
+  for(const stop of jobStops){
+   const jobActs=stop.ids.map(id=>activities.find(a=>a.id===id)).filter(Boolean);
+   const items=(jobActs.find(a=>a.items?.length)?.items||[]).map(i=>({productId:i.productId,itemDescription:i.description,quantity:i.qty,status:i.status,transferPo:i.transferPo,kit:i.kit||''}));
+   if(!items.length)continue;
+   const time=timeForStop(stop);
+   pages.push({venue:stop.site,color:colorForStop?.(stop),direction:'Job',time,stops:[{direction:'Job',time}],orders:[{id:jobActs[0]?.ref||'',description:jobActs[0]?.description||'',job:true,items}],warnings:[],seen:new Set()});
   }
  }
  for(const page of pages){

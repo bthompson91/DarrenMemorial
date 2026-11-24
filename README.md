@@ -2,10 +2,10 @@
 
 A local, offline web app that replaces the Excel/VBA Milk Run workflow.
 
-- Paste the Dump data directly into the app, then click **Generate / reconcile**.
+- Paste the Dump data directly into the app, then click **🔄 Refresh**.
 - Venue, contact, vehicle and run-order configuration is stored in the browser's `localStorage`.
 - Configuration can be exported to and imported from a JSON file.
-- The generated schedule can be copied to the clipboard (**Copy all schedules**) or exported as a JSON backup (**Export schedule**).
+- The generated schedule can be copied to the clipboard (**📑 Copy all**) or exported as a JSON backup (**💾 Export**).
 - Upload the transfer report (.xlsx, PowerBI export) on the Schedules page to build the schedule from transfers and load the booklet items in one step — no Dump paste needed for transfers. Then click **Download PDF** beside a vehicle's schedule to download its booklet. Pages use landscape A4, with that vehicle's schedule first. Stops are matched by transfer order ID (ignoring leading zeroes in its numeric part) and scheduled date. Consecutive stops at a venue share a page; returning to that venue after other stops starts a new page in schedule order. Identical product lines within a transfer are combined by summing their quantities. Missing transfer rows are flagged with an R2 warning without stopping the booklet.
 - Upload the transfer CSV on the Schedules page instead if you only need booklet item details without changing the schedule. Return transfers are paired by incrementing the transfer ID and reversing the route, using the CSV return date. That pairing does not run on the transfer report, whose returns are explicit rows.
 - Each Uber stop also has a **Download RTF** action. Its A4 form includes transfer IDs and configured site contacts when available; addresses remain blank because they are not in the source data. Uber transfers match by normalized transfer ID regardless of date, since urgent runs may not follow the CSV schedule. Item rows are filled only when every transfer matches and shares one route; otherwise the form provides ten blank rows for handwriting. RTF files open in Word without an additional export library.
@@ -16,7 +16,7 @@ A local, offline web app that replaces the Excel/VBA Milk Run workflow.
 1. Download or clone this repository.
 2. Open `index.html` in Chrome, Edge, Firefox or Safari.
 3. Paste the Dump table into the **Paste Dump data** area (only base jobs are needed if you uploaded the transfer report), or upload the transfer report (.xlsx) instead for transfers.
-4. Click **Generate / reconcile**.
+4. Click **🔄 Refresh**.
 
 No installation, build step, internet connection, or backend server is required.
 
@@ -49,7 +49,7 @@ The PowerBI export has one row per item, with these columns: `DISPATCHDATE`, `TR
 - Dispatch times are ignored; the app calculates run order, so activities use a neutral midday time.
 - Returns are explicit rows in the report (description starts `ReturnOrder`), so no return is derived from them.
 - Blank rows, zero-quantity lines and the `Applied filters` footer row are skipped.
-- Once a report is loaded, Dump transfer rows are ignored on Generate — only base-job rows from the Dump are merged in. Use **Clear transfer report** to go back to Dump-only scheduling. The report also supplies the booklet item details, replacing the transfer CSV.
+- Once a report is loaded, Dump transfer rows are ignored on Refresh — only base-job rows from the Dump are merged in. Use the **✖️ Clear report** button next to **📊 Report** to go back to Dump-only scheduling. The report also supplies the booklet item details, replacing the transfer CSV.
 
 ## Picklist (.rtf)
 
@@ -58,7 +58,7 @@ Upload a picklist export on the Schedules page to build base jobs without pastin
 - EA Online Webinars orders are excluded entirely.
 - S-Assign (subrental) items show in the unassigned base jobs area in dark green, with Qty, Description and Transfer/PO.
 - Transfer items are kept with their kit grouping and the order they serve: in the booklet they appear grouped under their kit name, highlighted amber, with a Picklist order line on the transfer. Kit headers with no item rows contribute nothing. Transfer items with no transfer ID in Transfer/PO cannot be linked and show without the highlight.
-- Picklist base jobs win over Dump base jobs with the same order, date and kind. Use **Clear picklist** to go back to Dump base jobs.
+- Picklist base jobs win over Dump base jobs with the same order, date and kind. Use the **✖️ Clear picklist** button next to **📝 Picklist** to go back to Dump base jobs.
 - A base job assigned to a vehicle gets its own page in that vehicle's PDF booklet, listing all its picklist items grouped under their kit names, with Product ID, Description, Qty, Status and Transfer/PO. The page also shows the order's Ship to address. The runsheet keeps just the job number (leading zeroes dropped, e.g. `1008082`) and the job description; Dump base jobs have no items so they get no page.
 
 ## Runsheets

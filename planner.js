@@ -36,7 +36,8 @@ function renderSchedule(){
   let p=dayPlan(date),ss=rows(date),base=S.config.venues.find(v=>v.base&&!v.archived)?.name||'Base not configured',label=dayLabel(date);
   out+=`<section><div class="toolbar schedule-day-heading"><h2 title="${E(label)}">${E(label)}</h2>${btn('Copy day','copy',date)}${btn('Reset day','resetDay',date,'Regenerate this day using current defaults')}</div><div id="day-${date}">`;
   const h=holidays(date);if(h)out+=`<aside data-warning>${E(h)}</aside>`;if(!ss.length)out+='<p>No stops scheduled</p>';
-  for(const r of p.runs){
+  // A vehicle's runs read in time order, by first stop; other vehicles keep their place.
+  for(const r of [...p.runs].sort((a,b)=>a.id===b.id?((a.rows[0]?.start??a.start)-(b.rows[0]?.start??b.start)):0)){
    let warnings=[...r.warnings];if(!C.available(vehicle(r.id),date))warnings.push('Assigned vehicle unavailable');if(r.stops.some(s=>venue(s.site)?.type==='Van'&&vehicle(s.vehicle)?.type==='Truck'))warnings.push('Van venue assigned to truck');if(r.stops.some(s=>{const q=S.config.venues.find(v=>v.name===s.site);return q&&q.archived;}))warnings.push('Archived venue still scheduled');if(warnings.length)out+=`<aside data-warning>${E(warnings.join(' · '))}</aside>`;
    let runVehicle=vehicle(r.id),runName=runVehicle?.name||'';if(runVehicle?.reg)runName+=' '+runVehicle.reg;if(r.crewed)runName+=' — Crewed Transfer';
    let body=marker(r.start,base,'Start of Run'),lunch=false,returned=false;

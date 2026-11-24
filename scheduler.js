@@ -44,7 +44,7 @@ function plan(input){
   const hasLunch=lunch!==null&&r.morning.length&&r.pm.length;
   const blocks=[...r.blocks];
   if(hasLunch)blocks.push({start:lunch,end:lunch+60});
-  let cursor=hasLunch?lunch+90:r.morning.length?r.arrival:lunch===null?570:lunch+90;
+  let cursor=hasLunch?lunch+90:r.morning.length?r.arrival:lunch===null?780:lunch+90;
   for(const s of r.pm.filter(s=>!s.job&&s.lock==null&&!s.follow)){
    const n=duration(r,s),t=place(cursor,n,blocks),x={id:s.id,s,start:t,end:t+n};r.rows.push(x);blocks.push(x);cursor=x.end;
   }
@@ -66,7 +66,7 @@ function plan(input){
   r.rows.sort((a,b)=>a.start-b.start||a.end-b.end);
   r.lunchStart=hasLunch?lunch:null;
   r.lunchEnd=hasLunch?lunch+60:null;
-  r.start=r.morning.length?Math.min(540,...r.rows.map(x=>x.start)):(lunch===null?540:lunch+60);
+  r.start=r.morning.length?Math.min(540,...r.rows.map(x=>x.start)):(lunch===null?780:lunch+60);
   r.end=r.rows.length?Math.max(...r.rows.map(x=>x.end)):(hasLunch?lunch+60:r.start);
   r.returnMorning=r.arrival;
   r.returnFinal=r.end;
@@ -79,9 +79,9 @@ function plan(input){
  return {runs:parts,lunchStart:lunch,lunchEnd:lunch===null?null:lunch+60,fallback};
 }
 function moveStop(stops,rows,id,step,lunchStart,lunchEnd){const ordered=rows.map(row=>stops.find(stop=>stop.id===row.id)).filter(Boolean),from=ordered.findIndex(stop=>stop.id===id),target=ordered[from+step],currentRow=rows.find(row=>row.id===id),targetRow=target&&rows.find(row=>row.id===target.id);if(from<0||!target||!currentRow||!targetRow)return null;const crossesLunch=lunchStart!==null&&lunchEnd!==null&&(step<0&&currentRow.start>=lunchEnd&&targetRow.start<lunchStart||step>0&&currentRow.start<lunchStart&&targetRow.start>=lunchEnd);if(!crossesLunch){ordered.splice(from,1);const targetIndex=ordered.indexOf(target);ordered.splice(step<0?targetIndex:targetIndex+1,0,stops.find(stop=>stop.id===id));}return {stops:[...stops.filter(stop=>!ordered.includes(stop)),...ordered],target};}
-function breakStop(stops,selectedId,makeId){const selected=stops.find(s=>s.id===selectedId);if(!selected||selected.ids.length<2)return null;const ids=[...selected.ids];selected.ids=[ids[0]];selected.autoKey='manual';selected.edited=true;let follow=selected.id;const split=ids.slice(1).map(activityId=>{const stop={...selected,id:makeId(),ids:[activityId],lock:null,follow};follow=stop.id;return stop;});stops.splice(stops.indexOf(selected)+1,0,...split);return stops;}
-function unlinkStop(stops,selectedId,activityId,makeId){const selected=stops.find(s=>s.id===selectedId);if(!selected||selected.ids.length<2||!selected.ids.includes(activityId))return null;selected.ids=selected.ids.filter(id=>id!==activityId);selected.autoKey='manual';selected.edited=true;const split={...selected,id:makeId(),ids:[activityId],lock:null,follow:selected.id};stops.splice(stops.indexOf(selected)+1,0,split);return stops;}
-function mergeStops(stops,all,selectedId){const selected=all.find(s=>s.id===selectedId);if(!selected||!stops.some(s=>s.id===selectedId))return null;const removed=new Set(all.filter(s=>s.id!==selectedId).map(s=>s.id)),conflicts=all.filter(s=>s.id!==selectedId&&s.lock!==null&&s.lock!==selected.lock),merged={...selected,ids:[...new Set(all.flatMap(s=>s.ids))],autoKey:'manual',edited:true};if(removed.has(merged.follow))delete merged.follow;const result=stops.filter(s=>!all.some(q=>q.id===s.id)||s.id===selectedId).map(s=>s.id===selectedId?merged:s.follow&&removed.has(s.follow)?{...s,follow:selectedId}:s);return {stops:result,selected:merged,conflicts};}
+function breakStop(stops,selectedId,makeId){const selected=stops.find(s=>s.id===selectedId);if(!selected||selected.ids.length<2)return null;const ids=[...selected.ids];selected.ids=[ids[0]];selected.autoKey='manual';selected.edited=true;let follow=selected.id;const split=ids.slice(1).map(activityId=>{const stop={...selected,id:makeId(),ids:[activityId],lock:null,follow,autoKey:'manual',edited:true,crewed:false};follow=stop.id;return stop;});stops.splice(stops.indexOf(selected)+1,0,...split);return stops;}
+function unlinkStop(stops,selectedId,activityId,makeId){const selected=stops.find(s=>s.id===selectedId);if(!selected||selected.ids.length<2||!selected.ids.includes(activityId))return null;selected.ids=selected.ids.filter(id=>id!==activityId);selected.autoKey='manual';selected.edited=true;const split={...selected,id:makeId(),ids:[activityId],lock:null,follow:selected.id,autoKey:'manual',edited:true,crewed:false};stops.splice(stops.indexOf(selected)+1,0,split);return stops;}
+function mergeStops(stops,all,selectedId){const selected=all.find(s=>s.id===selectedId);if(!selected||!stops.some(s=>s.id===selectedId))return null;const removed=new Set(all.filter(s=>s.id!==selectedId).map(s=>s.id)),conflicts=all.filter(s=>s.id!==selectedId&&s.lock!==null&&s.lock!==selected.lock),merged={...selected,ids:[...new Set(all.flatMap(s=>s.ids))],autoKey:'manual',edited:true,crewed:all.some(s=>s.crewed)};if(removed.has(merged.follow))delete merged.follow;const result=stops.filter(s=>!all.some(q=>q.id===s.id)||s.id===selectedId).map(s=>s.id===selectedId?merged:s.follow&&removed.has(s.follow)?{...s,follow:selectedId}:s);return {stops:result,selected:merged,conflicts};}
 function dates(a,b){if(!validDate(a)||!validDate(b)||a>b)throw Error('Invalid date range');let out=[],d=new Date(a+'T12:00:00Z');while(d.toISOString().slice(0,10)<=b){out.push(d.toISOString().slice(0,10));d.setUTCDate(d.getUTCDate()+1);}return out;}
 function resetRange(state,dates,regenerate){const selected=new Set(dates),activities=state.activities,stops=state.stops,outside=stops.filter(s=>!selected.has(s.date));let generated;try{state.activities=activities.filter(a=>selected.has(a.date));state.stops=[];regenerate();generated=state.stops;}finally{state.activities=activities;state.stops=stops;}state.stops=outside.concat(generated);}
 function validDate(s){return typeof s==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(s)&&Number.isFinite(Date.parse(s))&&new Date(s+'T12:00:00Z').toISOString().slice(0,10)===s;}
@@ -237,12 +237,19 @@ function transferBooklet(stops,activities,transferRows,date,vehicleId,timeForSto
  // ignoreTransferDate). Jobs with no items (e.g. Dump jobs) get no page.
  if(!ignoreTransferDate){
   const jobStops=stops.filter(s=>s.date===date&&s.vehicle===vehicleId&&s.job&&s.ids.length&&(!onlyStopIds||onlyStopIds.includes(s.id))).sort((a,b)=>timeForStop(a)-timeForStop(b));
+  // One page per order per vehicle-day: the Delivery and Pick up jobs are
+  // separate stops but share the order's item list, so a second stop for
+  // the same order adds its time to the existing page instead of a new one.
+  const jobPagesByRef=new Map();
   for(const stop of jobStops){
    const jobActs=stop.ids.map(id=>activities.find(a=>a.id===id)).filter(Boolean);
    const items=(jobActs.find(a=>a.items?.length)?.items||[]).map(i=>({productId:i.productId,itemDescription:i.description,quantity:i.qty,status:i.status,transferPo:i.transferPo,kit:i.kit||''}));
    if(!items.length)continue;
-   const time=timeForStop(stop);
-   pages.push({venue:stop.site,color:colorForStop?.(stop),direction:'Job',time,stops:[{direction:'Job',time}],orders:[{id:jobActs[0]?.ref||'',description:jobActs[0]?.description||'',job:true,shipTo:jobActs[0]?.shipTo||'',items}],warnings:[],seen:new Set()});
+   const time=timeForStop(stop),ref=jobActs[0]?.ref||'',existing=jobPagesByRef.get(ref);
+   if(existing){existing.stops.push({direction:'Job',time});continue;}
+   const page={venue:stop.site,color:colorForStop?.(stop),direction:'Job',time,stops:[{direction:'Job',time}],orders:[{id:ref,description:jobActs[0]?.description||'',job:true,shipTo:jobActs[0]?.shipTo||'',items}],warnings:[],seen:new Set()};
+   jobPagesByRef.set(ref,page);
+   pages.push(page);
   }
  }
  for(const page of pages){
@@ -301,7 +308,7 @@ function sheetRows(xml,shared){
  while((rowMatch=rowPattern.exec(xml))){
   const row=[],cellPattern=/<(?:[\w.-]+:)?c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/(?:[\w.-]+:)?c>)/g;let cellMatch,position=0;
   while((cellMatch=cellPattern.exec(rowMatch[1]))){
-   const attrs=cellMatch[1]||'',content=cellMatch[2]||'',type=attr(attrs,'t'),ref=attr(attrs,'r'),index=columnIndex(ref)??position++;
+   const attrs=cellMatch[1]||'',content=cellMatch[2]||'',type=attr(attrs,'t'),ref=attr(attrs,'r'),index=columnIndex(ref)??position;position=index+1;
    let value=null;
    if(type==='inlineStr'){let joined='';const texts=/<(?:[\w.-]+:)?t\b[^>]*>([\s\S]*?)<\/(?:[\w.-]+:)?t>/g;let text;while((text=texts.exec(content)))joined+=unescapeXml(text[1]);value=joined;}
    else{const raw=/<(?:[\w.-]+:)?v\b[^>]*>([\s\S]*?)<\/(?:[\w.-]+:)?v>/.exec(content);if(raw){const text=unescapeXml(raw[1]);value=type==='s'?shared[Number(text)]??'':/^-?\d+(\.\d+)?$/.test(text)?Number(text):text;}}
@@ -355,4 +362,4 @@ ${info.map(cells=>courierRow(cells,infoWidths)).join('')}
 ${courierRow(['Product ID','Item Description','Qty','Prep Date','Return Date'].map(text=>cell(text,true)),itemWidths,0,true)}
 ${items.map(values=>courierRow(values.map(value=>cell(value)),itemWidths,600)).join('')}}`;
 }
-const api={plan,place,moveStop,breakStop,unlinkStop,mergeStops,dates,resetRange,date,validDate,parse,parseTransferReport,parseTransferCsv,parseXlsx,xlsxSheetRows:sheetRows,xlsxSharedStrings:sharedStrings,xlsxSheetPath:sheetPath,transferBooklet,courierSheetData,courierRtf:{create:createCourierRtf},available,allocate,parsePicklist};if(typeof module!=='undefined')module.exports=api;root.MilkRunCore=api;root.MilkRunXlsx={parse:parseXlsx,sheetRows,sharedStrings,sheetPath};root.MilkRunCourierRtf={create:createCourierRtf};})(globalThis);
+const api={plan,place,moveStop,breakStop,unlinkStop,mergeStops,dates,resetRange,date,validDate,parse,parseTransferReport,parseTransferCsv,parseXlsx,xlsxSheetRows:sheetRows,xlsxSharedStrings:sharedStrings,xlsxSheetPath:sheetPath,transferBooklet,transferKey,courierSheetData,courierRtf:{create:createCourierRtf},available,allocate,parsePicklist};if(typeof module!=='undefined')module.exports=api;root.MilkRunCore=api;root.MilkRunXlsx={parse:parseXlsx,sheetRows,sharedStrings,sheetPath};root.MilkRunCourierRtf={create:createCourierRtf};})(globalThis);

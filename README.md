@@ -59,11 +59,12 @@ Upload a picklist export on the Schedules page to build base jobs without pastin
 - S-Assign (subrental) items show in the unassigned base jobs area in dark green, with Qty, Description and Transfer/PO.
 - Transfer items are kept with their kit grouping and the order they serve: in the booklet they appear grouped under their kit name, highlighted amber, with a Picklist order line on the transfer. Kit headers with no item rows contribute nothing. Transfer items with no transfer ID in Transfer/PO cannot be linked and show without the highlight.
 - Picklist base jobs win over Dump base jobs with the same order, date and kind. Use **Clear picklist** to go back to Dump base jobs.
-- A base job assigned to a vehicle gets its own page in that vehicle's PDF booklet, listing all its picklist items grouped under their kit names, with Product ID, Description, Qty, Status and Transfer/PO. The runsheet keeps just the job number (leading zeroes dropped, e.g. `1008082`) and the job description; Dump base jobs have no items so they get no page.
+- A base job assigned to a vehicle gets its own page in that vehicle's PDF booklet, listing all its picklist items grouped under their kit names, with Product ID, Description, Qty, Status and Transfer/PO. The page also shows the order's Ship to address. The runsheet keeps just the job number (leading zeroes dropped, e.g. `1008082`) and the job description; Dump base jobs have no items so they get no page.
 
 ## Runsheets
 
 - In the Change run dialog, ticking **Crewed Transfer** assigns the chosen transport but gives that stop its own separate runsheet in the list, with its own booklet PDF. It has no effect for Unassigned or an external method (Uber, KIS, Live Event).
+- The front sheet of a vehicle PDF booklet is that run's runsheet, job number and description only. The subrental item lines stay on screen and on the base job pages, not on the front sheet.
 
 ## Configuration
 

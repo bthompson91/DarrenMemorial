@@ -155,10 +155,17 @@ function parsePicklist(text){
  starts.forEach((s,idx)=>{
   const sec=rows.slice(s,starts[idx+1]??rows.length);
   const orderNo=field(sec,'ORDER NO.'),desc=field(sec,'Order Desc'),cust=field(sec,'Cust Name'),delivery=field(sec,'Delivery'),pickup=field(sec,'Pick up');
+  // SHIP TO is a label row whose address runs down the value column of the
+  // following rows until the next labelled row; join the non-empty parts.
+  const shipIdx=sec.findIndex(r=>r.some(c=>c.replace(/:\s*$/,'').trim()==='SHIP TO'));
+  const shipParts=[];
+  if(shipIdx>=0)for(let i=shipIdx+1;i<sec.length;i++){if(sec[i][0])break;if(sec[i][2])shipParts.push(sec[i][2]);}
+  const shipTo=shipParts.join(' ');
   if(!orderNo){errors.push('Picklist section '+(idx+1)+' has no order number');return;}
   if(/EA Online Webinars/i.test(desc))return;
   let order=orders.get(orderNo);
-  if(!order){order={orderNo,desc,cust,delivery,pickup,items:new Map(),notes:[]};orders.set(orderNo,order);}
+  if(!order){order={orderNo,desc,cust,delivery,pickup,shipTo,items:new Map(),notes:[]};orders.set(orderNo,order);}
+  else if(!order.shipTo)order.shipTo=shipTo;
   else if(JSON.stringify(parseWhen(order.delivery))!==JSON.stringify(parseWhen(delivery))||JSON.stringify(parseWhen(order.pickup))!==JSON.stringify(parseWhen(pickup))){errors.push('Order '+orderNo+' has inconsistent Delivery / Pick up times; later sections ignored');return;}
   let kit=null;
   for(const r of sec){
@@ -178,7 +185,7 @@ function parsePicklist(text){
   const items=[...order.items.values()].map(i=>({status:i.status,productId:i.productId,qty:i.qty,description:i.description,transferPo:i.transferPo,kit:i.kit?i.kit.name:''}));
   for(const [kind,when] of [['Ship',whenD],['Receive',whenP]]){
    if(!when){errors.push('Order '+order.orderNo+' is missing a '+(kind==='Ship'?'Delivery':'Pick up')+' time');continue;}
-   jobs.push({id:JSON.stringify([order.orderNo,when.date,kind,true]),ref:order.orderNo,date:when.date,kind,site:order.cust,managed:'',time:when.time,job:true,localBase:false,description:order.desc,sources:[],sAssign,items});
+   jobs.push({id:JSON.stringify([order.orderNo,when.date,kind,true]),ref:order.orderNo,date:when.date,kind,site:order.cust,managed:'',time:when.time,job:true,localBase:false,description:order.desc,sources:[],sAssign,items,shipTo:order.shipTo||''});
   }
   for(const item of order.items.values()){
    if(item.status!=='Transfer')continue;
@@ -235,7 +242,7 @@ function transferBooklet(stops,activities,transferRows,date,vehicleId,timeForSto
    const items=(jobActs.find(a=>a.items?.length)?.items||[]).map(i=>({productId:i.productId,itemDescription:i.description,quantity:i.qty,status:i.status,transferPo:i.transferPo,kit:i.kit||''}));
    if(!items.length)continue;
    const time=timeForStop(stop);
-   pages.push({venue:stop.site,color:colorForStop?.(stop),direction:'Job',time,stops:[{direction:'Job',time}],orders:[{id:jobActs[0]?.ref||'',description:jobActs[0]?.description||'',job:true,items}],warnings:[],seen:new Set()});
+   pages.push({venue:stop.site,color:colorForStop?.(stop),direction:'Job',time,stops:[{direction:'Job',time}],orders:[{id:jobActs[0]?.ref||'',description:jobActs[0]?.description||'',job:true,shipTo:jobActs[0]?.shipTo||'',items}],warnings:[],seen:new Set()});
   }
  }
  for(const page of pages){

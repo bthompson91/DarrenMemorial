@@ -197,10 +197,10 @@ function parseTransferCsv(text){const records=csvRecords(text.replace(/^\uFEFF/,
 function transferKey(value){const id=String(value||'').trim(),match=/^(.*?)(\d+)$/.exec(id);return match?match[1]+match[2].replace(/^0+(?=\d)/,''):id;}
 function transfersWithReturns(rows){const all=rows.slice(),explicit=new Set(rows.map(r=>JSON.stringify([transferKey(r.orderId),r.date])));for(const row of rows){if(!row.returnDate)continue;const match=/^(.*?)(\d+)$/.exec(row.orderId);if(!match)throw Error('Cannot derive return transfer ID from '+row.orderId);const number=Number(match[2]);if(!Number.isSafeInteger(number))throw Error('Cannot derive return transfer ID from '+row.orderId);const orderId=match[1]+String(number+1).padStart(match[2].length,'0');if(explicit.has(JSON.stringify([transferKey(orderId),row.returnDate])))continue;all.push({...row,orderId,orderDescription:'Return: '+row.orderDescription,status:'Return (derived)',fromSite:row.toSite,toSite:row.fromSite,date:row.returnDate,returnDate:''});}return all;}
 function consolidateTransferItems(items){const merged=[],indexes=new Map();for(const item of items){const quantity=Number(item.quantity);if(!Number.isSafeInteger(quantity)){merged.push(item);continue;}const key=JSON.stringify([item.productId,item.itemDescription,item.date,item.returnDate]),index=indexes.get(key);if(index===undefined){indexes.set(key,merged.length);merged.push({...item,quantity:String(quantity)});continue;}const total=Number(merged[index].quantity)+quantity;if(Number.isSafeInteger(total))merged[index].quantity=String(total);else merged.push(item);}return merged;}
-function transferBooklet(stops,activities,transferRows,date,vehicleId,timeForStop,colorForStop,ignoreTransferDate=false,picklist){
+function transferBooklet(stops,activities,transferRows,date,vehicleId,timeForStop,colorForStop,ignoreTransferDate=false,picklist,onlyStopIds=null){
  const availableRows=transfersWithReturns(transferRows),pages=[];
  const addPage=(stop)=>{let page=pages[pages.length-1];if(!page||page.venue!==stop.site){page={venue:stop.site,color:colorForStop?.(stop),direction:'',time:null,stops:[],orders:[],warnings:[],seen:new Set()};pages.push(page);}return page;};
- const scheduled=stops.filter(s=>s.date===date&&s.vehicle===vehicleId&&!s.job&&s.ids.length).sort((a,b)=>timeForStop(a)-timeForStop(b));
+ const scheduled=stops.filter(s=>s.date===date&&s.vehicle===vehicleId&&!s.job&&s.ids.length&&(!onlyStopIds||onlyStopIds.includes(s.id))).sort((a,b)=>timeForStop(a)-timeForStop(b));
  for(const stop of scheduled){
   const page=addPage(stop),time=timeForStop(stop);
   const addStop=(direction)=>{if(!page.stops.some(s=>s.direction===direction&&s.time===time))page.stops.push({direction,time});};
@@ -229,7 +229,7 @@ function transferBooklet(stops,activities,transferRows,date,vehicleId,timeForSto
  // but only in the vehicle booklet (never the Uber courier form, which uses
  // ignoreTransferDate). Jobs with no items (e.g. Dump jobs) get no page.
  if(!ignoreTransferDate){
-  const jobStops=stops.filter(s=>s.date===date&&s.vehicle===vehicleId&&s.job&&s.ids.length).sort((a,b)=>timeForStop(a)-timeForStop(b));
+  const jobStops=stops.filter(s=>s.date===date&&s.vehicle===vehicleId&&s.job&&s.ids.length&&(!onlyStopIds||onlyStopIds.includes(s.id))).sort((a,b)=>timeForStop(a)-timeForStop(b));
   for(const stop of jobStops){
    const jobActs=stop.ids.map(id=>activities.find(a=>a.id===id)).filter(Boolean);
    const items=(jobActs.find(a=>a.items?.length)?.items||[]).map(i=>({productId:i.productId,itemDescription:i.description,quantity:i.qty,status:i.status,transferPo:i.transferPo,kit:i.kit||''}));

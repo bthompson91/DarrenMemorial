@@ -61,6 +61,10 @@ Upload a picklist export on the Schedules page to build base jobs without pastin
 - Picklist base jobs win over Dump base jobs with the same order, date and kind. Use **Clear picklist** to go back to Dump base jobs.
 - A base job assigned to a vehicle gets its own page in that vehicle's PDF booklet, listing all its picklist items grouped under their kit names, with Product ID, Description, Qty, Status and Transfer/PO. The runsheet keeps just the job number (leading zeroes dropped, e.g. `1008082`) and the job description; Dump base jobs have no items so they get no page.
 
+## Runsheets
+
+- In the Change run dialog, ticking **Crewed Transfer** assigns the chosen transport but gives that stop its own separate runsheet in the list, with its own booklet PDF. It has no effect for Unassigned or an external method (Uber, KIS, Live Event).
+
 ## Configuration
 
 Open **Config** to manage venues and the van-days mode.

@@ -120,11 +120,81 @@ function parseTransferReport(rows,bases){
  }
  return {activities,transferRows,transfers:groups.size};
 }
+// Picklist (.rtf) for base jobs: one order becomes a Delivery (Ship) job and
+// a Pick up (Receive) job at the customer base, ref = order number.
+// EA Online Webinars orders are excluded entirely, as in parse(). S-Assign
+// (subrental) items ride on both jobs for the runsheet; Transfer items are
+// returned as a lookup keyed by transfer order + product, so the booklet can
+// highlight them under their kit with the order they serve. Kit headers group
+// the rows under them; kit headers with no rows contribute nothing.
+const cp1252Decoder=new TextDecoder('windows-1252');
+function rtfCellText(raw){
+ let s=String(raw).replace(/\\'([0-9a-fA-F]{2})/g,(m,hex)=>cp1252Decoder.decode(new Uint8Array([parseInt(hex,16)])));
+ s=s.replace(/\\u(-?\d+)\?/g,(m,n)=>{const code=Number(n);return String.fromCharCode(code<0?code+65536:code);});
+ s=s.replace(/\\par\b/g,' ').replace(/\\[a-zA-Z]+-?\d* ?/g,'').replace(/[{}]/g,'');
+ return s.replace(/\s+/g,' ').trim();
+}
+function parsePicklist(text){
+ if(typeof text!=='string'||!text.includes('PICKLIST'))throw Error('No picklist orders found in this file');
+ const rows=[];
+ for(const chunk of text.split(/\\row\b/)){
+  if(!chunk.includes('\\cell'))continue;
+  // the first piece holds the row definition plus the first cell's text;
+  // cleaning strips the definition and leaves that text, as for other cells
+  const cells=chunk.split(/\\cell\b/).map(rtfCellText);
+  while(cells.length&&cells[cells.length-1]==='')cells.pop();
+  if(cells.length)rows.push(cells);
+ }
+ const starts=[];rows.forEach((r,i)=>{if(r.length===1&&r[0]==='PICKLIST')starts.push(i);});
+ if(!starts.length)throw Error('No picklist orders found in this file');
+ const field=(sec,label)=>{for(const r of sec)for(let j=0;j<r.length;j++)if(r[j].replace(/:\s*$/,'').trim()===label)for(let k=j+1;k<r.length;k++)if(r[k])return r[k];return '';};
+ const parseWhen=value=>{const m=/^(\d{2})-(\d{2})-(\d{4})(\d{2}):(\d{2})$/.exec(String(value||'').replace(/\s+/g,''));if(!m)return null;const date=m[3]+'-'+m[2]+'-'+m[1],time=Number(m[4])*60+Number(m[5]);return validDate(date)&&Number(m[4])<24&&Number(m[5])<60?{date,time}:null;};
+ const orders=new Map(),errors=[],statuses=['Reserved','S-Assign','S-Rent','Transfer'];
+ starts.forEach((s,idx)=>{
+  const sec=rows.slice(s,starts[idx+1]??rows.length);
+  const orderNo=field(sec,'ORDER NO.'),desc=field(sec,'Order Desc'),cust=field(sec,'Cust Name'),delivery=field(sec,'Delivery'),pickup=field(sec,'Pick up');
+  if(!orderNo){errors.push('Picklist section '+(idx+1)+' has no order number');return;}
+  if(/EA Online Webinars/i.test(desc))return;
+  let order=orders.get(orderNo);
+  if(!order){order={orderNo,desc,cust,delivery,pickup,items:new Map(),notes:[]};orders.set(orderNo,order);}
+  else if(JSON.stringify(parseWhen(order.delivery))!==JSON.stringify(parseWhen(delivery))||JSON.stringify(parseWhen(order.pickup))!==JSON.stringify(parseWhen(pickup))){errors.push('Order '+orderNo+' has inconsistent Delivery / Pick up times; later sections ignored');return;}
+  let kit=null;
+  for(const r of sec){
+   const note=/Item\s+(\d+)\s+added to Transfer Order\s+#(T\d+)/i.exec(r.join(' '));
+   if(note){order.notes.push({productId:note[1],transferId:note[2]});continue;}
+   if(r[0]===''&&r[1]&&/^\d+$/.test(r[1])&&!r[2]&&r[5]){kit={id:r[1],name:r[5]};continue;}
+   if(!statuses.includes(r[0])||!r[1]||!/^\d+$/.test(r[1]))continue;
+   const item={status:r[0],productId:r[1],qty:r[2]||'',description:r[5]||'',transferPo:r[11]||'',kit};
+   order.items.set(JSON.stringify([item.status,item.productId,item.description,item.qty,item.transferPo]),item);
+  }
+ });
+ const jobs=[],lookup={};
+ for(const order of orders.values()){
+  if(!order.cust){errors.push('Order '+order.orderNo+' has no customer name');continue;}
+  const whenD=parseWhen(order.delivery),whenP=parseWhen(order.pickup);
+  const sAssign=[...order.items.values()].filter(i=>i.status==='S-Assign').map(i=>({qty:i.qty,description:i.description,transferPo:i.transferPo}));
+  for(const [kind,when] of [['Ship',whenD],['Receive',whenP]]){
+   if(!when){errors.push('Order '+order.orderNo+' is missing a '+(kind==='Ship'?'Delivery':'Pick up')+' time');continue;}
+   jobs.push({id:JSON.stringify([order.orderNo,when.date,kind,true]),ref:order.orderNo,date:when.date,kind,site:order.cust,managed:'',time:when.time,job:true,localBase:false,description:order.desc,sources:[],sAssign});
+  }
+  for(const item of order.items.values()){
+   if(item.status!=='Transfer')continue;
+   const m=/T\d+/.exec(item.transferPo||'');
+   if(!m)continue;
+   lookup[JSON.stringify([transferKey(m[0]),item.productId])]={transferId:m[0],productId:item.productId,kit:item.kit?item.kit.name:'',orderNo:order.orderNo,orderDesc:order.desc};
+  }
+  for(const n of order.notes){
+   const k=JSON.stringify([transferKey(n.transferId),n.productId]);
+   if(!lookup[k])lookup[k]={transferId:n.transferId,productId:n.productId,kit:'',orderNo:order.orderNo,orderDesc:order.desc};
+  }
+ }
+ return {jobs,lookup,orders:orders.size,errors};
+}
 function parseTransferCsv(text){const records=csvRecords(text.replace(/^\uFEFF/,''));if(!records.length)throw Error('Transfer CSV is empty');const header=records[0].map(x=>x.trim().toUpperCase()),columns=['TRANSFERORDERID','TRANSFERORDERDESCRIPTION','STATUS','FROMSITENAME','TOSITENAME','PRODUCT ID','ITEM DESCRIPTION','QUANTITY','PREP DATE','RETURNDATE'],indexes=Object.fromEntries(columns.map(name=>[name,header.indexOf(name)]));for(const name of columns)if(indexes[name]<0)throw Error('Transfer CSV is missing the '+name+' column');return records.slice(1).map((cells,i)=>{const value=name=>(cells[indexes[name]]||'').trim(),returnDate=value('RETURNDATE'),item={orderId:value('TRANSFERORDERID'),orderDescription:value('TRANSFERORDERDESCRIPTION'),status:value('STATUS'),fromSite:value('FROMSITENAME'),toSite:value('TOSITENAME'),productId:value('PRODUCT ID'),itemDescription:value('ITEM DESCRIPTION'),quantity:value('QUANTITY'),date:date(value('PREP DATE')),returnDate:returnDate?date(returnDate):''};if(!item.orderId||!item.fromSite||!item.toSite||!item.itemDescription||!item.quantity||!item.date||returnDate&&!item.returnDate)throw Error('Invalid transfer CSV row '+(i+2));return item;});}
 function transferKey(value){const id=String(value||'').trim(),match=/^(.*?)(\d+)$/.exec(id);return match?match[1]+match[2].replace(/^0+(?=\d)/,''):id;}
 function transfersWithReturns(rows){const all=rows.slice(),explicit=new Set(rows.map(r=>JSON.stringify([transferKey(r.orderId),r.date])));for(const row of rows){if(!row.returnDate)continue;const match=/^(.*?)(\d+)$/.exec(row.orderId);if(!match)throw Error('Cannot derive return transfer ID from '+row.orderId);const number=Number(match[2]);if(!Number.isSafeInteger(number))throw Error('Cannot derive return transfer ID from '+row.orderId);const orderId=match[1]+String(number+1).padStart(match[2].length,'0');if(explicit.has(JSON.stringify([transferKey(orderId),row.returnDate])))continue;all.push({...row,orderId,orderDescription:'Return: '+row.orderDescription,status:'Return (derived)',fromSite:row.toSite,toSite:row.fromSite,date:row.returnDate,returnDate:''});}return all;}
 function consolidateTransferItems(items){const merged=[],indexes=new Map();for(const item of items){const quantity=Number(item.quantity);if(!Number.isSafeInteger(quantity)){merged.push(item);continue;}const key=JSON.stringify([item.productId,item.itemDescription,item.date,item.returnDate]),index=indexes.get(key);if(index===undefined){indexes.set(key,merged.length);merged.push({...item,quantity:String(quantity)});continue;}const total=Number(merged[index].quantity)+quantity;if(Number.isSafeInteger(total))merged[index].quantity=String(total);else merged.push(item);}return merged;}
-function transferBooklet(stops,activities,transferRows,date,vehicleId,timeForStop,colorForStop,ignoreTransferDate=false){
+function transferBooklet(stops,activities,transferRows,date,vehicleId,timeForStop,colorForStop,ignoreTransferDate=false,picklist){
  const availableRows=transfersWithReturns(transferRows),pages=[];
  const addPage=(stop)=>{let page=pages[pages.length-1];if(!page||page.venue!==stop.site){page={venue:stop.site,color:colorForStop?.(stop),direction:'',time:null,stops:[],orders:[],warnings:[],seen:new Set()};pages.push(page);}return page;};
  const scheduled=stops.filter(s=>s.date===date&&s.vehicle===vehicleId&&!s.job&&s.ids.length).sort((a,b)=>timeForStop(a)-timeForStop(b));
@@ -147,7 +217,9 @@ function transferBooklet(stops,activities,transferRows,date,vehicleId,timeForSto
    const seenKey=JSON.stringify([key,direction]);
    if(page.seen.has(seenKey))continue;
    page.seen.add(seenKey);
-   page.orders.push({id:rows[0].orderId,direction,time,fromSite:rows[0].fromSite,toSite:rows[0].toSite,description:rows[0].orderDescription,status:rows[0].status,items:consolidateTransferItems(rows)});
+   const items=consolidateTransferItems(rows).map(item=>{const hit=picklist?.[JSON.stringify([key,item.productId])];return hit?{...item,kit:hit.kit,picklistOrder:hit.orderNo,picklistDesc:hit.orderDesc}:item;});
+   const picklistOrders=[...new Map(items.filter(i=>i.picklistOrder).map(i=>[i.picklistOrder,i.picklistDesc])).entries()].map(([orderNo,orderDesc])=>({orderNo,orderDesc}));
+   page.orders.push({id:rows[0].orderId,direction,time,fromSite:rows[0].fromSite,toSite:rows[0].toSite,description:rows[0].orderDescription,status:rows[0].status,items,picklistOrders});
   }
  }
  for(const page of pages){
@@ -260,4 +332,4 @@ ${info.map(cells=>courierRow(cells,infoWidths)).join('')}
 ${courierRow(['Product ID','Item Description','Qty','Prep Date','Return Date'].map(text=>cell(text,true)),itemWidths,0,true)}
 ${items.map(values=>courierRow(values.map(value=>cell(value)),itemWidths,600)).join('')}}`;
 }
-const api={plan,place,moveStop,breakStop,unlinkStop,mergeStops,dates,resetRange,date,validDate,parse,parseTransferReport,parseTransferCsv,parseXlsx,xlsxSheetRows:sheetRows,xlsxSharedStrings:sharedStrings,xlsxSheetPath:sheetPath,transferBooklet,courierSheetData,courierRtf:{create:createCourierRtf},available,allocate};if(typeof module!=='undefined')module.exports=api;root.MilkRunCore=api;root.MilkRunXlsx={parse:parseXlsx,sheetRows,sharedStrings,sheetPath};root.MilkRunCourierRtf={create:createCourierRtf};})(globalThis);
+const api={plan,place,moveStop,breakStop,unlinkStop,mergeStops,dates,resetRange,date,validDate,parse,parseTransferReport,parseTransferCsv,parseXlsx,xlsxSheetRows:sheetRows,xlsxSharedStrings:sharedStrings,xlsxSheetPath:sheetPath,transferBooklet,courierSheetData,courierRtf:{create:createCourierRtf},available,allocate,parsePicklist};if(typeof module!=='undefined')module.exports=api;root.MilkRunCore=api;root.MilkRunXlsx={parse:parseXlsx,sheetRows,sharedStrings,sheetPath};root.MilkRunCourierRtf={create:createCourierRtf};})(globalThis);

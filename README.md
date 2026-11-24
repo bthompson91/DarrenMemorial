@@ -51,6 +51,15 @@ The PowerBI export has one row per item, with these columns: `DISPATCHDATE`, `TR
 - Blank rows, zero-quantity lines and the `Applied filters` footer row are skipped.
 - Once a report is loaded, Dump transfer rows are ignored on Generate — only base-job rows from the Dump are merged in. Use **Clear transfer report** to go back to Dump-only scheduling. The report also supplies the booklet item details, replacing the transfer CSV.
 
+## Picklist (.rtf)
+
+Upload a picklist export on the Schedules page to build base jobs without pasting the Dump. Each order becomes two base jobs at the customer base (ref = order number, description = Order Desc): a Ship on the Delivery date/time and a Receive on the Pick up date/time. Repeated sections for one order are merged.
+
+- EA Online Webinars orders are excluded entirely.
+- S-Assign (subrental) items show in the unassigned base jobs area in dark green, with Qty, Description and Transfer/PO.
+- Transfer items are kept with their kit grouping and the order they serve: in the booklet they appear grouped under their kit name, highlighted amber, with a Picklist order line on the transfer. Kit headers with no item rows contribute nothing. Transfer items with no transfer ID in Transfer/PO cannot be linked and show without the highlight.
+- Picklist base jobs win over Dump base jobs with the same order, date and kind. Use **Clear picklist** to go back to Dump base jobs.
+
 ## Configuration
 
 Open **Config** to manage venues and the van-days mode.

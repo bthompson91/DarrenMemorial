@@ -52,4 +52,30 @@ t('xlsx reader parses the PowerBI inline-string sheet with serial dates',async()
  const rows=await C.parseXlsx(zipFile([['xl/workbook.xml',workbook,0],['xl/_rels/workbook.xml.rels',rels,0],['xl/worksheets/sheet1.xml',sheet,8]]));
  a.deepEqual(rows,[['DISPATCHDATE','TRANSFERORDERID'],[46357.5,'T1']]);
 });
+const rr=(...cells)=>'\\trowd'+cells.map(c=>'\\pard '+c+'\\cell').join('')+'\\row';
+const picklistHead=(order,desc,delivery,pickup)=>rr('PICKLIST')+rr('ORDER NO.:','',''+order)+rr('Order Desc:','',desc)+rr('Cust Name :','','Melbourne Base')+rr('Project # :','',String(order))+rr('Delivery:','',delivery)+rr('Pick up:','',pickup);
+const picklistRtf='{\\rtf1\n'
++picklistHead('000001008082','FAAA Congress - Netwealth - MCEC','24-11-2026 12:30','24-11-2026 21:00')
++rr('Reserved','10004902','3','3','','Cable Audio Microphone XLR F - M 40m')
++rr('','10034526','','','','Speaker Kit EV EVOLVE 70 Black')
++rr('Reserved','10034507','2','2','','Speaker System Portable Electro-Voice EVOLVE 70 Black')
++rr('S-Assign','10021219','1','','1','DJ equipment','','','','','','WooHah Productions Pty Ltd, RP00248911')
++rr('','10034898','','','','DJ Kit Pioneer CDJ2000 Nexus')
++rr('Transfer','10017241','1','','1','Mixer DJ 1+4/2 Pioneer DJM900 Nexus','','','','','','Crown Melbourne,T00000602368')
++rr('Transfer','10017242','2','','2','Player CD DJ Pioneer CDJ2000 Nexus','','','','','','Crown Melbourne,T00000602368')
++rr('','','Item exchanged from X to Y')
++picklistHead('000001008082','FAAA Congress - Netwealth - MCEC','24-11-2026 12 :30','24-11-2026 21:00')
++rr('S-Assign','10021219','1','','1','DJ equipment','','','','','','WooHah Productions Pty Ltd, RP00248911')
++rr('Reserved','10004903','3','3','','Cable Audio Microphone XLR F - M 50m')
++picklistHead('000001016746','EA Online Webinars - ACO 9th December','09-12-2026 08:00','09-12-2026 17:00')
++rr('Reserved','10002312','1','1','','Network Switch 16 Port')
++picklistHead('000001021060','School Sports Australia - Opening Ceremony - Lakes','29-11-2026 08:00','29-11-2026 20:00')
++rr('','10031415','','','','Mixer Digital 16+2/8 Yamaha DM3 with WAX610 Kit');
+const picklist=C.parsePicklist(picklistRtf);
+t('picklist creates delivery and pickup base jobs',()=>{a.equal(picklist.orders,2);a.equal(picklist.jobs.length,4);a.deepEqual(picklist.errors,[]);const ship=picklist.jobs.find(j=>j.kind==='Ship'&&j.ref==='000001008082');a.equal(ship.date,'2026-11-24');a.equal(ship.time,750);a.equal(ship.site,'Melbourne Base');a.equal(ship.job,true);a.equal(ship.description,'FAAA Congress - Netwealth - MCEC');const recv=picklist.jobs.find(j=>j.kind==='Receive'&&j.ref==='000001008082');a.equal(recv.time,1260);a.equal(picklist.jobs.filter(j=>j.ref==='000001016746').length,0);});
+t('picklist carries subrental items on both jobs without duplicating repeats',()=>{const sub=[{qty:'1',description:'DJ equipment',transferPo:'WooHah Productions Pty Ltd, RP00248911'}];for(const j of picklist.jobs.filter(j=>j.ref==='000001008082'))a.deepEqual(j.sAssign,sub);a.deepEqual(picklist.jobs.find(j=>j.ref==='000001021060').sAssign,[]);});
+t('picklist transfer lookup keeps kit and order',()=>{a.equal(Object.keys(picklist.lookup).length,2);a.deepEqual(picklist.lookup[JSON.stringify(['T602368','10017241'])],{transferId:'T00000602368',productId:'10017241',kit:'DJ Kit Pioneer CDJ2000 Nexus',orderNo:'000001008082',orderDesc:'FAAA Congress - Netwealth - MCEC'});});
+t('picklist rejects a file with no orders',()=>{a.throws(()=>C.parsePicklist('not an rtf file'),/No picklist orders/);});
+t('picklist links kit headers to transfers from added-to-transfer notes',()=>{const r=C.parsePicklist('{\\rtf1\n'+picklistHead('000001021060','School Sports Australia - Opening Ceremony - Lakes','29-11-2026 08:00','29-11-2026 20:00')+rr('','10020048','','','','UHF Radio Microphone 4ch Kit Shure Axient Beta58A Crown Melbourne')+rr('','','Item 10020048 added to Transfer Order #T00000602551 from Crown Melbourne'));a.equal(r.orders,1);a.equal(r.jobs.length,2);a.deepEqual(r.lookup[JSON.stringify(['T602551','10020048'])],{transferId:'T00000602551',productId:'10020048',kit:'',orderNo:'000001021060',orderDesc:'School Sports Australia - Opening Ceremony - Lakes'});});
+t('transfer booklet annotates picklist transfer items with kit and order',()=>{const rows=C.parseTransferCsv('TRANSFERORDERID,TRANSFERORDERDESCRIPTION,STATUS,FROMSITENAME,TOSITENAME,PRODUCT ID,ITEM DESCRIPTION,QUANTITY,PREP DATE,RETURNDATE\nT00000602368,Crown > Base,Shipped,Crown Melbourne,Melbourne Base,10017241,Mixer DJ 1+4/2 Pioneer DJM900 Nexus,1,24-11-2026,\nT00000602368,Crown > Base,Shipped,Crown Melbourne,Melbourne Base,10017242,Player CD DJ Pioneer CDJ2000 Nexus,2,24-11-2026,\nT00000602368,Crown > Base,Shipped,Crown Melbourne,Melbourne Base,10099999,Unrelated Cable,1,24-11-2026,'),pages=C.transferBooklet([{date:'2026-11-24',vehicle:'truck',site:'Crown Melbourne',ids:['a'],job:false}],[{id:'a',ref:'T00000602368',kind:'Ship'}],rows,'2026-11-24','truck',()=>600,undefined,undefined,picklist.lookup),items=pages[0].orders[0].items;a.equal(items.find(i=>i.productId==='10017241').kit,'DJ Kit Pioneer CDJ2000 Nexus');a.equal(items.find(i=>i.productId==='10017241').picklistOrder,'000001008082');a.equal(items.find(i=>i.productId==='10099999').kit,undefined);a.deepEqual(pages[0].orders[0].picklistOrders,[{orderNo:'000001008082',orderDesc:'FAAA Congress - Netwealth - MCEC'}]);});
 Promise.all(pending).then(()=>console.log(JSON.stringify({passed:n})));

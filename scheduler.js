@@ -88,6 +88,38 @@ function validDate(s){return typeof s==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(s)&
 function date(s){if(/^\d{2}[-/]\d{2}[-/]\d{4}$/.test(s)){const a=s.split(/[-/]/);s=a[2]+'-'+a[1]+'-'+a[0];}else if(/^\d+(\.\d+)?$/.test(s))s=new Date(Date.UTC(1899,11,30)+Math.floor(Number(s))*86400000).toISOString().slice(0,10);return validDate(s)?s:null;}
 function parse(text,bases){const records=[],errors=[];for(const rawLine of text.replace(/^\uFEFF/,'').replace(/\r\n?/g,'\n').split('\n')){const line=rawLine.replace(/^[ \t]+/,'');if(/^(true|false)\t/i.test(line))records.push(line);else if(records.length)records[records.length-1]+='\n'+line;else if(line.trim()&&!/reference|description|status|date/i.test(line))errors.push('Unrecognised leading line');}const map=new Map(),blank=new Map();records.forEach((line,i)=>{const c=line.split('\t');if(c.length<17||!date(c[9])){errors.push('Malformed record '+(i+1));return;}const kind=c[6].trim(),site=c[11].trim(),managed=c[15].trim(),job=c[5].trim()!=='Transfer';if(c[16].trim().toUpperCase()==='CLOSED'||/EA Online Webinars/i.test(c[8])||!['Ship','Receive'].includes(kind)||job&&!bases.includes(site))return;let localBase=!job&&bases.includes(site);const signature=JSON.stringify([c[7].trim(),date(c[9]),kind,job]),raw=c[7].trim(),seed=JSON.stringify([c[5],kind,c[8],date(c[9]),site,managed]),count=blank.get(seed)||0;blank.set(seed,count+1);const id=raw?signature:seed+':'+count,tm=/^(\d\d):(\d\d)$/.exec(c[4]),time=tm?Number(tm[1])*60+Number(tm[2]):null;if(time===null||time>=1440||Number(tm[2])>=60){errors.push('Invalid time in record '+(i+1));return;}const a={id,ref:raw,date:date(c[9]),kind,site,managed,time,job,localBase,description:c[8],sources:[]};if(!map.has(id))map.set(id,a);const target=map.get(id);target.sources.push(c);if(time<target.time){target.time=time;target.site=site;}});return {items:[...map.values()],errors};}
 function csvRecords(text){let records=[],row=[],value='',quoted=false;for(let i=0;i<text.length;i++){const c=text[i];if(quoted){if(c==='"'&&text[i+1]==='"'){value+='"';i++;}else if(c==='"')quoted=false;else value+=c;}else if(c==='"'){if(value)throw Error('Malformed CSV quoting');quoted=true;}else if(c===','){row.push(value);value='';}else if(c==='\n'||c==='\r'){if(c==='\r'&&text[i+1]==='\n')i++;row.push(value);if(row.some(x=>x.trim()))records.push(row);row=[];value='';}else value+=c;}if(quoted)throw Error('Unclosed quote in CSV');row.push(value);if(row.some(x=>x.trim()))records.push(row);return records;}
+function parseTransferReport(rows,bases){
+ // PowerBI transfer report: one row per item, grouped by transfer order id
+ // and dispatch date. Each transfer becomes a Ship at its From site and a
+ // Receive at its To site; a base end is warehouse activity, as in parse().
+ // Dispatch times are ignored: the app calculates run order, so activities
+ // use midday as a neutral time (time only anchors base jobs). Returns are
+ // explicit rows in this report, so returnDate stays blank and no return
+ // is derived from them.
+ if(!Array.isArray(rows)||!rows.length)throw Error('Transfer report is empty');
+ const header=rows[0].map(x=>String(x??'').trim().toUpperCase()),columns=['DISPATCHDATE','TRANSFERORDERID','TRANSFER DESCRIPTION','SKU','EQUIPMENT DESCRIPTION','FROM SITENAME','TO SITENAME','MANAGED BY','ORDEREDQTY'],indexes=Object.fromEntries(columns.map(name=>[name,header.indexOf(name)]));
+ for(const name of columns)if(indexes[name]<0)throw Error('Transfer report is missing the '+name+' column');
+ const groups=new Map(),transferRows=[];
+ rows.slice(1).forEach((cells,i)=>{
+  if(!cells||cells.every(x=>x===null||x===undefined||String(x).trim()===''))return;
+  const value=name=>{const cell=cells[indexes[name]];return cell===null||cell===undefined?'':String(cell).trim();};
+  if(!value('TRANSFERORDERID'))return; // footer rows, e.g. the PowerBI "Applied filters" line
+  const quantity=Number(cells[indexes['ORDEREDQTY']]);
+  if(!Number.isFinite(quantity)||quantity===0)return; // qty-0 lines move nothing
+  const itemDate=date(value('DISPATCHDATE')),orderId=value('TRANSFERORDERID'),fromSite=value('FROM SITENAME'),toSite=value('TO SITENAME'),description=value('TRANSFER DESCRIPTION');
+  if(!itemDate||!orderId||!fromSite||!toSite||!value('EQUIPMENT DESCRIPTION'))throw Error('Invalid transfer report row '+(i+2));
+  const key=JSON.stringify([orderId,itemDate]),group=groups.get(key);
+  if(group&&(group.fromSite!==fromSite||group.toSite!==toSite||group.description!==description))throw Error('Transfer '+orderId+' has inconsistent route details');
+  if(!group)groups.set(key,{orderId,date:itemDate,fromSite,toSite,description,managed:value('MANAGED BY')});
+  transferRows.push({orderId,orderDescription:description,status:/^returnorder\b/i.test(description)?'ReturnOrder':'',fromSite,toSite,productId:value('SKU'),itemDescription:value('EQUIPMENT DESCRIPTION'),quantity:String(quantity),date:itemDate,returnDate:''});
+ });
+ const activities=[];
+ for(const group of groups.values())for(const kind of ['Ship','Receive']){
+  const site=kind==='Ship'?group.fromSite:group.toSite;
+  activities.push({id:JSON.stringify([group.orderId,group.date,kind,false]),ref:group.orderId,date:group.date,kind,site,managed:group.managed,time:720,job:false,localBase:(bases||[]).includes(site),description:group.description,sources:[]});
+ }
+ return {activities,transferRows,transfers:groups.size};
+}
 function parseTransferCsv(text){const records=csvRecords(text.replace(/^\uFEFF/,''));if(!records.length)throw Error('Transfer CSV is empty');const header=records[0].map(x=>x.trim().toUpperCase()),columns=['TRANSFERORDERID','TRANSFERORDERDESCRIPTION','STATUS','FROMSITENAME','TOSITENAME','PRODUCT ID','ITEM DESCRIPTION','QUANTITY','PREP DATE','RETURNDATE'],indexes=Object.fromEntries(columns.map(name=>[name,header.indexOf(name)]));for(const name of columns)if(indexes[name]<0)throw Error('Transfer CSV is missing the '+name+' column');return records.slice(1).map((cells,i)=>{const value=name=>(cells[indexes[name]]||'').trim(),returnDate=value('RETURNDATE'),item={orderId:value('TRANSFERORDERID'),orderDescription:value('TRANSFERORDERDESCRIPTION'),status:value('STATUS'),fromSite:value('FROMSITENAME'),toSite:value('TOSITENAME'),productId:value('PRODUCT ID'),itemDescription:value('ITEM DESCRIPTION'),quantity:value('QUANTITY'),date:date(value('PREP DATE')),returnDate:returnDate?date(returnDate):''};if(!item.orderId||!item.fromSite||!item.toSite||!item.itemDescription||!item.quantity||!item.date||returnDate&&!item.returnDate)throw Error('Invalid transfer CSV row '+(i+2));return item;});}
 function transferKey(value){const id=String(value||'').trim(),match=/^(.*?)(\d+)$/.exec(id);return match?match[1]+match[2].replace(/^0+(?=\d)/,''):id;}
 function transfersWithReturns(rows){const all=rows.slice(),explicit=new Set(rows.map(r=>JSON.stringify([transferKey(r.orderId),r.date])));for(const row of rows){if(!row.returnDate)continue;const match=/^(.*?)(\d+)$/.exec(row.orderId);if(!match)throw Error('Cannot derive return transfer ID from '+row.orderId);const number=Number(match[2]);if(!Number.isSafeInteger(number))throw Error('Cannot derive return transfer ID from '+row.orderId);const orderId=match[1]+String(number+1).padStart(match[2].length,'0');if(explicit.has(JSON.stringify([transferKey(orderId),row.returnDate])))continue;all.push({...row,orderId,orderDescription:'Return: '+row.orderDescription,status:'Return (derived)',fromSite:row.toSite,toSite:row.fromSite,date:row.returnDate,returnDate:''});}return all;}
@@ -131,4 +163,4 @@ function courierSheetData(page){
 }
 function available(v,d){const w=new Date(d+'T12:00:00Z').getUTCDay();if(v.builtin)return v.id==='uber'||w>0&&w<6;return v.days.includes(w)&&(!v.start||d>=v.start)&&(!v.end||d<=v.end)&&!(v.off||[]).some(p=>d>=p[0]&&p[1]>=d);}
 function allocate(q,vs,d){if(!q)return '';const all=vs.filter(v=>['Truck','Van'].includes(v.type)&&available(v,d));return (all.find(v=>v.id===q.vehicle)||all.find(v=>v.rental&&v.type===q.type)||all.find(v=>!v.rental&&v.type===q.type)||all.find(v=>v.rental&&v.type!==q.type))?.id||'';}
-const api={plan,place,moveStop,breakStop,unlinkStop,mergeStops,dates,resetRange,date,validDate,parse,parseTransferCsv,transferBooklet,courierSheetData,available,allocate};if(typeof module!=='undefined')module.exports=api;root.MilkRunCore=api;})(globalThis);
+const api={plan,place,moveStop,breakStop,unlinkStop,mergeStops,dates,resetRange,date,validDate,parse,parseTransferReport,parseTransferCsv,transferBooklet,courierSheetData,available,allocate};if(typeof module!=='undefined')module.exports=api;root.MilkRunCore=api;})(globalThis);

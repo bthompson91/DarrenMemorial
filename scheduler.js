@@ -6,9 +6,15 @@ function plan(input){
  const duration=(r,s)=>{if(s.job)return 120;const i=r.stops.indexOf(s),next=r.stops.slice(i+1).find(x=>!x.job&&x.section===s.section);return next?len(s,next):ret(s);};
  const fallback=!runs.some(r=>r.stops.some(s=>s.section==='am'||s.lock!=null&&s.lock<570||s.job&&s.centre-60<570));
  if(fallback)for(const r of runs)for(const s of r.stops)if(!s.job&&s.lock==null)s.section='am';
- let parts=runs.map(r=>{
-  const fixed=r.stops.filter(s=>s.job||s.lock!=null).map(s=>({id:s.id,s,start:s.job?(Number.isInteger(s.departureOverride)&&s.departureOverride>=0&&s.departureOverride<1440?s.departureOverride:s.centre-60):s.lock,end:(s.job?(Number.isInteger(s.departureOverride)&&s.departureOverride>=0&&s.departureOverride<1440?s.departureOverride:s.centre-60):s.lock)+duration(r,s)}));
-  const rows=[...fixed],blocks=[...fixed],warnings=[];
+ // Fixed windows are known before placement, so each run also avoids the
+ // fixed commitments of the other runs for the same vehicle: a locked
+ // crewed transfer, or a base job with a set Depart time.
+ const fixedOf=r=>r.stops.filter(s=>s.job||s.lock!=null).map(s=>{const start=s.job?(Number.isInteger(s.departureOverride)&&s.departureOverride>=0&&s.departureOverride<1440?s.departureOverride:s.centre-60):s.lock;return {id:s.id,s,start,end:start+duration(r,s)};});
+ const allFixed=runs.map(fixedOf);
+ let parts=runs.map((r,ri)=>{
+  const fixed=allFixed[ri],external=r.id===undefined?[]:allFixed.filter((_,qi)=>qi!==ri&&runs[qi].id===r.id).flat();
+  const rows=[...fixed],blocks=[...fixed,...external],warnings=[];
+  for(const x of fixed)for(const e of external)if(x.start<e.end&&e.start<x.end)warnings.push('Fixed commitments overlap: '+x.id+' / '+e.id);
   const followers=r.stops.filter(s=>!s.job&&s.lock==null&&s.follow),placed=new Set();
   let cursor=570;
   for(const s of r.stops.filter(s=>!s.job&&s.lock==null&&s.section==='am'&&!s.follow)){

@@ -65,6 +65,7 @@ Upload a picklist export on the Schedules page to build base jobs without pastin
 
 - In the Change run dialog, ticking **Crewed Transfer** assigns the chosen transport but gives that stop its own separate runsheet in the list, with its own booklet PDF. It has no effect for Unassigned or an external method (Uber, KIS, Live Event).
 - When a vehicle has a crewed run, its milk run shows a **CREWED RUN - See separate schedule** block for those times, so the vehicle reads as unavailable there. Only a crewed stop with a set time blocks the run; an unlocked crewed stop shows no block.
+- If a stop is locked to a time, the stops after it in the run continue from after that time instead of filling the gap before it.
 - The front sheet of a vehicle PDF booklet is that run's runsheet, job number and description only. The subrental item lines stay on screen and on the base job pages, not on the front sheet.
 
 ## Configuration

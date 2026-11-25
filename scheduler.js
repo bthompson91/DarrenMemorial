@@ -4,6 +4,10 @@ function place(t,n,blocks){for(const b of [...blocks].sort((a,b)=>a.start-b.star
 function plan(input,lunchMinutes=60){
  lunchMinutes=Number.isInteger(lunchMinutes)&&lunchMinutes>=0&&lunchMinutes<=240?lunchMinutes:60;
  const runs=structuredClone(input);
+ // A stop listed after a fixed stop in a run starts after that fixed stop
+ // ends: the run order is the route order, so later stops do not backfill
+ // into the gap before a locked time.
+ const floorFor=(stops,fixed,s)=>{let floor=570;const order=new Map(stops.map((q,i)=>[q.id,i]));for(const f of fixed)if(f.s.section===s.section&&order.get(f.s.id)<order.get(s.id))floor=Math.max(floor,f.end);return floor;};
  const duration=(r,s)=>{if(s.job)return 120;const i=r.stops.indexOf(s),next=r.stops.slice(i+1).find(x=>!x.job&&x.section===s.section);return next?len(s,next):ret(s);};
  const fallback=!runs.some(r=>r.stops.some(s=>s.section==='am'||s.lock!=null&&s.lock<570||s.job&&s.centre-60<570));
  if(fallback)for(const r of runs)for(const s of r.stops)if(!s.job&&s.lock==null)s.section='am';
@@ -23,7 +27,7 @@ function plan(input,lunchMinutes=60){
   const followers=r.stops.filter(s=>!s.job&&s.lock==null&&s.follow),placed=new Set();
   let cursor=570;
   for(const s of r.stops.filter(s=>!s.job&&s.lock==null&&s.section==='am'&&!s.follow)){
-   const n=duration(r,s),t=place(cursor,n,blocks),x={id:s.id,s,start:t,end:t+n};rows.push(x);blocks.push(x);cursor=x.end;
+   const n=duration(r,s),t=place(Math.max(cursor,floorFor(r.stops,fixed,s)),n,blocks),x={id:s.id,s,start:t,end:t+n};rows.push(x);blocks.push(x);cursor=x.end;
   }
   let progress=true;
   while(progress){progress=false;
@@ -31,7 +35,7 @@ function plan(input,lunchMinutes=60){
     if(placed.has(s.id))continue;
     const f=rows.find(x=>x.id===s.follow);
     if(!f)continue;
-    const n=duration(r,s),t=place(f.end,n,blocks),x={id:s.id,s,start:t,end:t+n};rows.push(x);blocks.push(x);placed.add(s.id);progress=true;
+    const n=duration(r,s),t=place(Math.max(f.end,floorFor(r.stops,fixed,s)),n,blocks),x={id:s.id,s,start:t,end:t+n};rows.push(x);blocks.push(x);placed.add(s.id);progress=true;
    }
   }
   let morning=rows.filter(x=>x.s.section==='am'&&!x.s.job);
@@ -57,7 +61,7 @@ function plan(input,lunchMinutes=60){
   if(hasLunch)blocks.push({start:lunch,end:lunch+lunchMinutes});
   let cursor=hasLunch?lunch+lunchMinutes+30:r.morning.length?r.arrival:lunch===null?780:lunch+lunchMinutes+30;
   for(const s of r.pm.filter(s=>!s.job&&s.lock==null&&!s.follow)){
-   const n=duration(r,s),t=place(cursor,n,blocks),x={id:s.id,s,start:t,end:t+n};r.rows.push(x);blocks.push(x);cursor=x.end;
+   const n=duration(r,s),t=place(Math.max(cursor,floorFor(r.stops,r.fixed,s)),n,blocks),x={id:s.id,s,start:t,end:t+n};r.rows.push(x);blocks.push(x);cursor=x.end;
   }
   let progress=true;
   while(progress){progress=false;
@@ -65,13 +69,13 @@ function plan(input,lunchMinutes=60){
     if(r.placed.has(s.id))continue;
     const f=r.rows.find(x=>x.id===s.follow);
     if(!f)continue;
-    const n=duration(r,s),t=place(f.end,n,blocks),x={id:s.id,s,start:t,end:t+n};r.rows.push(x);blocks.push(x);r.placed.add(s.id);progress=true;
+    const n=duration(r,s),t=place(Math.max(f.end,floorFor(r.stops,r.fixed,s)),n,blocks),x={id:s.id,s,start:t,end:t+n};r.rows.push(x);blocks.push(x);r.placed.add(s.id);progress=true;
    }
   }
   for(const s of r.followers){
    if(r.placed.has(s.id))continue;
    const base=s.section==='pm'?cursor:(r.arrival??570);
-   const n=duration(r,s),t=place(base,n,blocks),x={id:s.id,s,start:t,end:t+n};r.rows.push(x);blocks.push(x);r.placed.add(s.id);
+   const n=duration(r,s),t=place(Math.max(base,floorFor(r.stops,r.fixed,s)),n,blocks),x={id:s.id,s,start:t,end:t+n};r.rows.push(x);blocks.push(x);r.placed.add(s.id);
    r.warnings.push('Follow-up placed without its parent: '+s.id);
   }
   r.rows.sort((a,b)=>a.start-b.start||a.end-b.end);

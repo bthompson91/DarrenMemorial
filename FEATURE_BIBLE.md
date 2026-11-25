@@ -22,7 +22,7 @@ Fixed source-defined commitments and manually locked times are not silently shif
 ## 2. Drivers who finish before lunch
 When a driver completes all work before lunch and has no post-lunch activity, the driver returns to base and ends the run immediately.
 Do not display lunch for that driver. Do not include that driver's return time in the shared-lunch calculation for continuing drivers.
-Shared lunch remains one 60-minute event for participating drivers who have further work afterwards. Its start is the latest warehouse-return time after their pre-break commitments and return allowances.
+Shared lunch remains one event for participating drivers who have further work afterwards, its length set in Config (default 60 minutes). Its start is the latest warehouse-return time after their pre-break commitments and return allowances.
 Afternoon-only drivers start when the shared lunch ends. A second base venue record in the same building does not create another lunch group.
 If all drivers have completed all work, there is no shared lunch to generate.
 This supersedes any v0.7 wording implying that every morning driver must participate in lunch or that an end-of-run row precedes that driver's lunch.
@@ -48,7 +48,7 @@ This fallback applies across all runs, not merely because one individual vehicle
 - A driver with morning work only returns to base and ends the run without a lunch row.
 - A completed driver's late return does not delay the shared lunch of continuing drivers.
 - All drivers finished means no shared lunch is generated.
-- Continuing drivers share exactly 60 minutes of lunch based on their latest required warehouse return.
+- Continuing drivers share one lunch, of the length set in Config (default 60 minutes), based on their latest required warehouse return.
 - Afternoon-only drivers start at the shared lunch end when a shared lunch exists.
 - A 15:00 base job remains 14:00–16:00 after generation, edits, reordering and regeneration.
 - Unlocked work moves around fixed base jobs and locked stops rather than occupying those blocks.

@@ -1,7 +1,8 @@
 (function(root){'use strict';
-const len=(s,next)=>s.job?120:!!s.regional!==!!next?.regional?60:30,ret=s=>!s||s.job?0:s.regional?60:30;
+const len=(s,next)=>s.job?120:!!s.regional!==!!next?.regional?60:30,ret=s=>s.job?0:s.regional?60:30;
 function place(t,n,blocks){for(const b of [...blocks].sort((a,b)=>a.start-b.start)){if(t+n<=b.start)break;if(t<b.end&&t+n>b.start)t=b.end;}return t;}
-function plan(input){
+function plan(input,lunchMinutes=60){
+ lunchMinutes=Number.isInteger(lunchMinutes)&&lunchMinutes>=0&&lunchMinutes<=240?lunchMinutes:60;
  const runs=structuredClone(input);
  const duration=(r,s)=>{if(s.job)return 120;const i=r.stops.indexOf(s),next=r.stops.slice(i+1).find(x=>!x.job&&x.section===s.section);return next?len(s,next):ret(s);};
  const fallback=!runs.some(r=>r.stops.some(s=>s.section==='am'||s.lock!=null&&s.lock<570||s.job&&s.centre-60<570));
@@ -14,6 +15,10 @@ function plan(input){
  let parts=runs.map((r,ri)=>{
   const fixed=allFixed[ri],external=r.id===undefined?[]:allFixed.filter((_,qi)=>qi!==ri&&runs[qi].id===r.id).flat();
   const rows=[...fixed],blocks=[...fixed,...external],warnings=[];
+  // A crewed run blocks its vehicle in the main run: show the block so the
+  // milk run reads as unavailable for those times. Only the main run gets
+  // one; the crewed run already shows the work itself.
+  if(!r.crewed)for(const e of allFixed.filter((_,qi)=>qi!==ri&&runs[qi].id===r.id&&runs[qi].crewed).flat())rows.push({id:'crewed-block-'+e.id,s:{id:'crewed-block-'+e.id,block:true,site:'CREWED RUN - See separate schedule',section:e.s.section,job:false},start:e.start,end:e.end});
   for(const x of fixed)for(const e of external)if(x.start<e.end&&e.start<x.end)warnings.push('Fixed commitments overlap: '+x.id+' / '+e.id);
   const followers=r.stops.filter(s=>!s.job&&s.lock==null&&s.follow),placed=new Set();
   let cursor=570;
@@ -42,15 +47,15 @@ function plan(input){
   while(moved){
    moved=false;
    for(const r of participating)for(const x of r.fixed){
-    if(x.start<lunch+60&&x.end>lunch){lunch=x.end;moved=true;}
+    if(x.start<lunch+lunchMinutes&&x.end>lunch){lunch=x.end;moved=true;}
    }
   }
  }
  for(const r of parts){
   const hasLunch=lunch!==null&&r.morning.length&&r.pm.length;
   const blocks=[...r.blocks];
-  if(hasLunch)blocks.push({start:lunch,end:lunch+60});
-  let cursor=hasLunch?lunch+90:r.morning.length?r.arrival:lunch===null?780:lunch+90;
+  if(hasLunch)blocks.push({start:lunch,end:lunch+lunchMinutes});
+  let cursor=hasLunch?lunch+lunchMinutes+30:r.morning.length?r.arrival:lunch===null?780:lunch+lunchMinutes+30;
   for(const s of r.pm.filter(s=>!s.job&&s.lock==null&&!s.follow)){
    const n=duration(r,s),t=place(cursor,n,blocks),x={id:s.id,s,start:t,end:t+n};r.rows.push(x);blocks.push(x);cursor=x.end;
   }
@@ -71,18 +76,18 @@ function plan(input){
   }
   r.rows.sort((a,b)=>a.start-b.start||a.end-b.end);
   r.lunchStart=hasLunch?lunch:null;
-  r.lunchEnd=hasLunch?lunch+60:null;
-  r.start=r.morning.length?Math.min(540,...r.rows.map(x=>x.start)):(lunch===null?780:lunch+60);
-  r.end=r.rows.length?Math.max(...r.rows.map(x=>x.end)):(hasLunch?lunch+60:r.start);
+  r.lunchEnd=hasLunch?lunch+lunchMinutes:null;
+  r.start=r.morning.length?Math.min(540,...r.rows.map(x=>x.start)):(lunch===null?780:lunch+lunchMinutes);
+  r.end=r.rows.length?Math.max(...r.rows.map(x=>x.end)):(hasLunch?lunch+lunchMinutes:r.start);
   r.returnMorning=r.arrival;
   r.returnFinal=r.end;
   for(let i=0;i<r.fixed.length;i++)for(let j=i+1;j<r.fixed.length;j++)if(r.fixed[i].start<r.fixed[j].end&&r.fixed[j].start<r.fixed[i].end)r.warnings.push('Fixed commitments overlap: '+r.fixed[i].id+' / '+r.fixed[j].id);
-  if(hasLunch&&r.fixed.some(x=>x.start<lunch+60&&x.end>lunch))r.warnings.push('Generated lunch overlaps fixed commitment');
+  if(hasLunch&&r.fixed.some(x=>x.start<lunch+lunchMinutes&&x.end>lunch))r.warnings.push('Generated lunch overlaps fixed commitment');
   if(hasLunch&&lunch-r.start>240)r.warnings.push('Lunch starts more than four hours into shift');
   if(r.end>1020)r.warnings.push('Run extends past 17:00');
   if(r.end-r.start>660)r.warnings.push('Shift exceeds eleven hours');
  }
- return {runs:parts,lunchStart:lunch,lunchEnd:lunch===null?null:lunch+60,fallback};
+ return {runs:parts,lunchStart:lunch,lunchEnd:lunch===null?null:lunch+lunchMinutes,fallback};
 }
 function moveStop(stops,rows,id,step,lunchStart,lunchEnd){const ordered=rows.map(row=>stops.find(stop=>stop.id===row.id)).filter(Boolean),from=ordered.findIndex(stop=>stop.id===id),target=ordered[from+step],currentRow=rows.find(row=>row.id===id),targetRow=target&&rows.find(row=>row.id===target.id);if(from<0||!target||!currentRow||!targetRow)return null;const crossesLunch=lunchStart!==null&&lunchEnd!==null&&(step<0&&currentRow.start>=lunchEnd&&targetRow.start<lunchStart||step>0&&currentRow.start<lunchStart&&targetRow.start>=lunchEnd);if(!crossesLunch){ordered.splice(from,1);const targetIndex=ordered.indexOf(target);ordered.splice(step<0?targetIndex:targetIndex+1,0,stops.find(stop=>stop.id===id));}return {stops:[...stops.filter(stop=>!ordered.includes(stop)),...ordered],target};}
 function breakStop(stops,selectedId,makeId){const selected=stops.find(s=>s.id===selectedId);if(!selected||selected.ids.length<2)return null;const ids=[...selected.ids];selected.ids=[ids[0]];selected.autoKey='manual';selected.edited=true;let follow=selected.id;const split=ids.slice(1).map(activityId=>{const stop={...selected,id:makeId(),ids:[activityId],lock:null,follow,autoKey:'manual',edited:true,crewed:false};follow=stop.id;return stop;});stops.splice(stops.indexOf(selected)+1,0,...split);return stops;}
@@ -92,7 +97,7 @@ function dates(a,b){if(!validDate(a)||!validDate(b)||a>b)throw Error('Invalid da
 function resetRange(state,dates,regenerate){const selected=new Set(dates),activities=state.activities,stops=state.stops,outside=stops.filter(s=>!selected.has(s.date));let generated;try{state.activities=activities.filter(a=>selected.has(a.date));state.stops=[];regenerate();generated=state.stops;}finally{state.activities=activities;state.stops=stops;}state.stops=outside.concat(generated);}
 function validDate(s){return typeof s==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(s)&&Number.isFinite(Date.parse(s))&&new Date(s+'T12:00:00Z').toISOString().slice(0,10)===s;}
 function date(s){if(/^\d{2}[-/]\d{2}[-/]\d{4}$/.test(s)){const a=s.split(/[-/]/);s=a[2]+'-'+a[1]+'-'+a[0];}else if(/^\d+(\.\d+)?$/.test(s))s=new Date(Date.UTC(1899,11,30)+Math.floor(Number(s))*86400000).toISOString().slice(0,10);return validDate(s)?s:null;}
-function parse(text,bases){const records=[],errors=[];for(const rawLine of text.replace(/^\uFEFF/,'').replace(/\r\n?/g,'\n').split('\n')){const line=rawLine.replace(/^[ \t]+/,'');if(/^(true|false)\t/i.test(line))records.push(line);else if(records.length)records[records.length-1]+='\n'+line;else if(line.trim()&&!/reference|description|status|date/i.test(line))errors.push('Unrecognised leading line');}const map=new Map(),blank=new Map();records.forEach((line,i)=>{const c=line.split('\t');if(c.length<17||!date(c[9])){errors.push('Malformed record '+(i+1));return;}const kind=c[6].trim(),site=c[11].trim(),managed=c[15].trim(),job=c[5].trim()!=='Transfer';if(c[16].trim().toUpperCase()==='CLOSED'||/EA Online Webinars/i.test(c[8])||!['Ship','Receive'].includes(kind)||job&&!bases.includes(site))return;let localBase=!job&&bases.includes(site);const signature=JSON.stringify([c[7].trim(),date(c[9]),kind,job]),raw=c[7].trim(),seed=JSON.stringify([c[5],kind,c[8],date(c[9]),site,managed]),count=blank.get(seed)||0;blank.set(seed,count+1);const id=raw?signature:seed+':'+count,tm=/^(\d\d):(\d\d)$/.exec(c[4]),time=tm?Number(tm[1])*60+Number(tm[2]):null;if(time===null||time>=1440||Number(tm[2])>=60){errors.push('Invalid time in record '+(i+1));return;}const a={id,ref:raw,date:date(c[9]),kind,site,managed,time,job,localBase,description:c[8],sources:[]};if(!map.has(id))map.set(id,a);const target=map.get(id);target.sources.push(c);if(time<target.time){target.time=time;target.site=site;}});return {items:[...map.values()],errors};}
+function parse(text,bases){const records=[],errors=[];for(const rawLine of text.replace(/^\uFEFF/,'').replace(/\r\n?/g,'\n').split('\n')){const line=rawLine.replace(/^[ \t]+/,'');if(/^(true|false)\t/i.test(line))records.push(line);else if(records.length)records[records.length-1]+='\n'+line;else if(line.trim()&&!/reference|description|status|date/i.test(line))errors.push('Unrecognised leading line');}const map=new Map(),blank=new Map();records.forEach((line,i)=>{const c=line.split('\t');if(c.length<17||!date(c[9])){errors.push('Malformed record '+(i+1));return;}const kind=c[6].trim(),site=c[11].trim(),managed=c[15].trim(),job=c[5].trim()!=='Transfer';if(c[16].trim().toUpperCase()==='CLOSED'||/EA Online Webinars/i.test(c[8])||!['Ship','Receive'].includes(kind)||job&&!bases.includes(site))return;let localBase=!job&&bases.includes(site);const signature=JSON.stringify([c[7].trim(),date(c[9]),kind,job]),raw=c[7].trim(),seed=JSON.stringify([c[5],kind,c[8],date(c[9]),site,managed]),count=blank.get(seed)||0;blank.set(seed,count+1);const id=raw?signature:seed+':'+count,tm=/^(\d\d):(\d\d)$/.exec(c[4]),time=tm?Number(tm[1])*60+Number(tm[2]):null;if(time===null||time>=1440||Number(tm[2])>=60){errors.push('Invalid time in record '+(i+1));return;}const a={id,ref:raw,date:date(c[9]),kind,site,managed,time,job,localBase,description:c[8]};if(!map.has(id))map.set(id,a);const target=map.get(id);if(time<target.time){target.time=time;target.site=site;}});return {items:[...map.values()],errors};}
 function csvRecords(text){let records=[],row=[],value='',quoted=false;for(let i=0;i<text.length;i++){const c=text[i];if(quoted){if(c==='"'&&text[i+1]==='"'){value+='"';i++;}else if(c==='"')quoted=false;else value+=c;}else if(c==='"'){if(value)throw Error('Malformed CSV quoting');quoted=true;}else if(c===','){row.push(value);value='';}else if(c==='\n'||c==='\r'){if(c==='\r'&&text[i+1]==='\n')i++;row.push(value);if(row.some(x=>x.trim()))records.push(row);row=[];value='';}else value+=c;}if(quoted)throw Error('Unclosed quote in CSV');row.push(value);if(row.some(x=>x.trim()))records.push(row);return records;}
 function parseTransferReport(rows,bases){
  // PowerBI transfer report: one row per item, grouped by transfer order id
@@ -105,7 +110,7 @@ function parseTransferReport(rows,bases){
  if(!Array.isArray(rows)||!rows.length)throw Error('Transfer report is empty');
  const header=rows[0].map(x=>String(x??'').trim().toUpperCase()),columns=['DISPATCHDATE','TRANSFERORDERID','TRANSFER DESCRIPTION','SKU','EQUIPMENT DESCRIPTION','FROM SITENAME','TO SITENAME','MANAGED BY','ORDEREDQTY'],indexes=Object.fromEntries(columns.map(name=>[name,header.indexOf(name)]));
  for(const name of columns)if(indexes[name]<0)throw Error('Transfer report is missing the '+name+' column');
- const groups=new Map(),transferRows=[];
+ const groups=new Map(),transferRows=[],errors=[];
  rows.slice(1).forEach((cells,i)=>{
   if(!cells||cells.every(x=>x===null||x===undefined||String(x).trim()===''))return;
   const value=name=>{const cell=cells[indexes[name]];return cell===null||cell===undefined?'':String(cell).trim();};
@@ -113,18 +118,19 @@ function parseTransferReport(rows,bases){
   const quantity=Number(cells[indexes['ORDEREDQTY']]);
   if(!Number.isFinite(quantity)||quantity===0)return; // qty-0 lines move nothing
   const itemDate=date(value('DISPATCHDATE')),orderId=value('TRANSFERORDERID'),fromSite=value('FROM SITENAME'),toSite=value('TO SITENAME'),description=value('TRANSFER DESCRIPTION');
-  if(!itemDate||!orderId||!fromSite||!toSite||!value('EQUIPMENT DESCRIPTION'))throw Error('Invalid transfer report row '+(i+2));
+  if(!itemDate||!orderId||!fromSite||!toSite||!value('EQUIPMENT DESCRIPTION')){errors.push('Invalid transfer report row '+(i+2));return;}
   const key=JSON.stringify([orderId,itemDate]),group=groups.get(key);
-  if(group&&(group.fromSite!==fromSite||group.toSite!==toSite||group.description!==description))throw Error('Transfer '+orderId+' has inconsistent route details');
+  if(group&&(group.fromSite!==fromSite||group.toSite!==toSite||group.description!==description)){errors.push('Transfer '+orderId+' has inconsistent route details; transfer skipped');group.bad=true;return;}
   if(!group)groups.set(key,{orderId,date:itemDate,fromSite,toSite,description,managed:value('MANAGED BY')});
   transferRows.push({orderId,orderDescription:description,status:/^returnorder\b/i.test(description)?'ReturnOrder':'',fromSite,toSite,productId:value('SKU'),itemDescription:value('EQUIPMENT DESCRIPTION'),quantity:String(quantity),date:itemDate,returnDate:''});
  });
+ const badKeys=new Set([...groups.values()].filter(g=>g.bad).map(g=>JSON.stringify([g.orderId,g.date])));
  const activities=[];
- for(const group of groups.values())for(const kind of ['Ship','Receive']){
+ for(const group of groups.values()){if(group.bad)continue;for(const kind of ['Ship','Receive']){
   const site=kind==='Ship'?group.fromSite:group.toSite;
-  activities.push({id:JSON.stringify([group.orderId,group.date,kind,false]),ref:group.orderId,date:group.date,kind,site,managed:group.managed,time:720,job:false,localBase:(bases||[]).includes(site),description:group.description,sources:[]});
- }
- return {activities,transferRows,transfers:groups.size};
+  activities.push({id:JSON.stringify([group.orderId,group.date,kind,false]),ref:group.orderId,date:group.date,kind,site,managed:group.managed,time:720,job:false,localBase:(bases||[]).includes(site),description:group.description});
+ }}
+ return {activities,transferRows:transferRows.filter(r=>!badKeys.has(JSON.stringify([r.orderId,r.date]))),transfers:[...groups.values()].filter(g=>!g.bad).length,errors};
 }
 // Picklist (.rtf) for base jobs: one order becomes a Delivery (Ship) job and
 // a Pick up (Receive) job at the customer base, ref = order number.
@@ -191,7 +197,7 @@ function parsePicklist(text){
   const items=[...order.items.values()].map(i=>({status:i.status,productId:i.productId,qty:i.qty,description:i.description,transferPo:i.transferPo,kit:i.kit?i.kit.name:''}));
   for(const [kind,when] of [['Ship',whenD],['Receive',whenP]]){
    if(!when){errors.push('Order '+order.orderNo+' is missing a '+(kind==='Ship'?'Delivery':'Pick up')+' time');continue;}
-   jobs.push({id:JSON.stringify([order.orderNo,when.date,kind,true]),ref:order.orderNo,date:when.date,kind,site:order.cust,managed:'',time:when.time,job:true,localBase:false,description:order.desc,sources:[],sAssign,items,shipTo:order.shipTo||''});
+   jobs.push({id:JSON.stringify([order.orderNo,when.date,kind,true]),ref:order.orderNo,date:when.date,kind,site:order.cust,managed:'',time:when.time,job:true,localBase:false,description:order.desc,sAssign,items,shipTo:order.shipTo||''});
   }
   for(const item of order.items.values()){
    if(item.status!=='Transfer')continue;
@@ -206,9 +212,11 @@ function parsePicklist(text){
  }
  return {jobs,lookup,orders:orders.size,errors};
 }
-function parseTransferCsv(text){const records=csvRecords(text.replace(/^\uFEFF/,''));if(!records.length)throw Error('Transfer CSV is empty');const header=records[0].map(x=>x.trim().toUpperCase()),columns=['TRANSFERORDERID','TRANSFERORDERDESCRIPTION','STATUS','FROMSITENAME','TOSITENAME','PRODUCT ID','ITEM DESCRIPTION','QUANTITY','PREP DATE','RETURNDATE'],indexes=Object.fromEntries(columns.map(name=>[name,header.indexOf(name)]));for(const name of columns)if(indexes[name]<0)throw Error('Transfer CSV is missing the '+name+' column');return records.slice(1).map((cells,i)=>{const value=name=>(cells[indexes[name]]||'').trim(),returnDate=value('RETURNDATE'),item={orderId:value('TRANSFERORDERID'),orderDescription:value('TRANSFERORDERDESCRIPTION'),status:value('STATUS'),fromSite:value('FROMSITENAME'),toSite:value('TOSITENAME'),productId:value('PRODUCT ID'),itemDescription:value('ITEM DESCRIPTION'),quantity:value('QUANTITY'),date:date(value('PREP DATE')),returnDate:returnDate?date(returnDate):''};if(!item.orderId||!item.fromSite||!item.toSite||!item.itemDescription||!item.quantity||!item.date||returnDate&&!item.returnDate)throw Error('Invalid transfer CSV row '+(i+2));return item;});}
+function parseTransferCsv(text){const records=csvRecords(text.replace(/^\uFEFF/,''));if(!records.length)throw Error('Transfer CSV is empty');const header=records[0].map(x=>x.trim().toUpperCase()),columns=['TRANSFERORDERID','TRANSFERORDERDESCRIPTION','STATUS','FROMSITENAME','TOSITENAME','PRODUCT ID','ITEM DESCRIPTION','QUANTITY','PREP DATE','RETURNDATE'],indexes=Object.fromEntries(columns.map(name=>[name,header.indexOf(name)]));for(const name of columns)if(indexes[name]<0)throw Error('Transfer CSV is missing the '+name+' column');const items=[],errors=[];records.slice(1).forEach((cells,i)=>{const value=name=>(cells[indexes[name]]||'').trim(),returnDate=value('RETURNDATE'),item={orderId:value('TRANSFERORDERID'),orderDescription:value('TRANSFERORDERDESCRIPTION'),status:value('STATUS'),fromSite:value('FROMSITENAME'),toSite:value('TOSITENAME'),productId:value('PRODUCT ID'),itemDescription:value('ITEM DESCRIPTION'),quantity:value('QUANTITY'),date:date(value('PREP DATE')),returnDate:returnDate?date(returnDate):''};if(!item.orderId||!item.fromSite||!item.toSite||!item.itemDescription||!item.quantity||!item.date||returnDate&&!item.returnDate){errors.push('Invalid transfer CSV row '+(i+2));return;}items.push(item);});items.errors=errors; // errors ride on the array so existing callers keep using it as a list
+return items;}
 function transferKey(value){const id=String(value||'').trim(),match=/^(.*?)(\d+)$/.exec(id);return match?match[1]+match[2].replace(/^0+(?=\d)/,''):id;}
-function transfersWithReturns(rows){const all=rows.slice(),explicit=new Set(rows.map(r=>JSON.stringify([transferKey(r.orderId),r.date])));for(const row of rows){if(!row.returnDate)continue;const match=/^(.*?)(\d+)$/.exec(row.orderId);if(!match)throw Error('Cannot derive return transfer ID from '+row.orderId);const number=Number(match[2]);if(!Number.isSafeInteger(number))throw Error('Cannot derive return transfer ID from '+row.orderId);const orderId=match[1]+String(number+1).padStart(match[2].length,'0');if(explicit.has(JSON.stringify([transferKey(orderId),row.returnDate])))continue;all.push({...row,orderId,orderDescription:'Return: '+row.orderDescription,status:'Return (derived)',fromSite:row.toSite,toSite:row.fromSite,date:row.returnDate,returnDate:''});}return all;}
+function transfersWithReturns(rows){const all=rows.slice(),explicit=new Set(rows.map(r=>JSON.stringify([transferKey(r.orderId),r.date])));for(const row of rows){if(!row.returnDate)continue;const match=/^(.*?)(\d+)$/.exec(row.orderId);if(!match)continue; // a return that cannot be derived is skipped, not a reason to reject the booklet
+  const number=Number(match[2]);if(!Number.isSafeInteger(number))continue;const orderId=match[1]+String(number+1).padStart(match[2].length,'0');if(explicit.has(JSON.stringify([transferKey(orderId),row.returnDate])))continue;all.push({...row,orderId,orderDescription:'Return: '+row.orderDescription,status:'Return (derived)',fromSite:row.toSite,toSite:row.fromSite,date:row.returnDate,returnDate:''});}return all;}
 function consolidateTransferItems(items){const merged=[],indexes=new Map();for(const item of items){const quantity=Number(item.quantity);if(!Number.isSafeInteger(quantity)){merged.push(item);continue;}const key=JSON.stringify([item.productId,item.itemDescription,item.date,item.returnDate]),index=indexes.get(key);if(index===undefined){indexes.set(key,merged.length);merged.push({...item,quantity:String(quantity)});continue;}const total=Number(merged[index].quantity)+quantity;if(Number.isSafeInteger(total))merged[index].quantity=String(total);else merged.push(item);}return merged;}
 function transferBooklet(stops,activities,transferRows,date,vehicleId,timeForStop,colorForStop,ignoreTransferDate=false,picklist,onlyStopIds=null){
  const availableRows=transfersWithReturns(transferRows),pages=[];
@@ -270,14 +278,14 @@ function courierSheetData(page){
  return {reliable,orderIds:[...new Set([...page.orders.map(order=>order.id),...page.warnings.map(warning=>warning.id).filter(id=>id&&id!=='Unknown transfer')])],fromSite:route?.fromSite||'',toSite:route?.toSite||'',items:reliable?page.orders.flatMap(order=>order.items):[]};
 }
 function available(v,d){const w=new Date(d+'T12:00:00Z').getUTCDay();if(v.builtin)return v.id==='uber'||w>0&&w<6;return v.days.includes(w)&&(!v.start||d>=v.start)&&(!v.end||d<=v.end)&&!(v.off||[]).some(p=>d>=p[0]&&p[1]>=d);}
-function allocate(q,vs,d){if(!q)return '';const all=vs.filter(v=>['Truck','Van'].includes(v.type)&&available(v,d));return (all.find(v=>v.id===q.vehicle)||all.find(v=>v.rental&&v.type===q.type)||all.find(v=>!v.rental&&v.type===q.type)||all.find(v=>v.rental&&v.type!==q.type))?.id||'';}
+function allocate(q,vs,d){if(!q)return '';const all=vs.filter(v=>['Truck','Van'].includes(v.type)&&available(v,d));return (all.find(v=>v.id===q.vehicle)||all.find(v=>v.rental&&v.type===q.type)||all.find(v=>!v.rental&&v.type===q.type)||all.find(v=>v.rental&&v.type!==q.type)||all.find(v=>!v.rental&&v.type!==q.type))?.id||'';}
 // Minimal .xlsx reader, no dependency: the PowerBI export is a zip of XML
 // files, with inline strings and Excel serial dates. Only the first sheet
 // is read. Stored and deflate entries are supported. Lives here, not in a
 // separate file, because the Pages workflow only deploys listed files.
 function fail(message){throw Error(message);}
 function text(bytes){return new TextDecoder('utf-8').decode(bytes).replace(/^\uFEFF/,'');}
-function unescapeXml(s){return s.replace(/&(#\d+|#x[0-9a-fA-F]+|amp|lt|gt|quot|apos);/g,(m,body)=>{if(body==='amp')return '&';if(body==='lt')return '<';if(body==='gt')return '>';if(body==='quot')return '"';if(body==='apos')return "'";if(body[0]==='#'){const code=body[1]==='x'?parseInt(body.slice(2),16):parseInt(body.slice(1),10);return Number.isFinite(code)?String.fromCodePoint(code):m;}return m;});}
+function unescapeXml(s){return s.replace(/&(#\d+|#x[0-9a-fA-F]+|amp|lt|gt|quot|apos);/g,(m,body)=>{if(body==='amp')return '&';if(body==='lt')return '<';if(body==='gt')return '>';if(body==='quot')return '"';if(body==='apos')return "'";if(body[0]==='#'){const code=body[1]==='x'?parseInt(body.slice(2),16):parseInt(body.slice(1),10);return code>=0&&code<=0x10FFFF?String.fromCodePoint(code):m;}return m;});}
 function attr(attrs,name){const match=new RegExp(name+'="([^"]*)"').exec(attrs||'');return match?match[1]:null;}
 async function inflateRaw(bytes){if(!bytes.length)return new Uint8Array(0);return new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer());}
 function zipEntries(buffer){
@@ -368,4 +376,4 @@ ${info.map(cells=>courierRow(cells,infoWidths)).join('')}
 ${courierRow(['Product ID','Item Description','Qty','Prep Date','Return Date'].map(text=>cell(text,true)),itemWidths,0,true)}
 ${items.map(values=>courierRow(values.map(value=>cell(value)),itemWidths,600)).join('')}}`;
 }
-const api={plan,place,moveStop,breakStop,unlinkStop,mergeStops,dates,resetRange,date,validDate,parse,parseTransferReport,parseTransferCsv,parseXlsx,xlsxSheetRows:sheetRows,xlsxSharedStrings:sharedStrings,xlsxSheetPath:sheetPath,transferBooklet,transferKey,courierSheetData,courierRtf:{create:createCourierRtf},available,allocate,parsePicklist};if(typeof module!=='undefined')module.exports=api;root.MilkRunCore=api;root.MilkRunXlsx={parse:parseXlsx,sheetRows,sharedStrings,sheetPath};root.MilkRunCourierRtf={create:createCourierRtf};})(globalThis);
+const api={plan,moveStop,breakStop,unlinkStop,mergeStops,dates,resetRange,date,validDate,parse,parseTransferReport,parseTransferCsv,parseXlsx,xlsxSheetRows:sheetRows,xlsxSharedStrings:sharedStrings,xlsxSheetPath:sheetPath,transferBooklet,transferKey,courierSheetData,courierRtf:{create:createCourierRtf},available,allocate,parsePicklist};if(typeof module!=='undefined')module.exports=api;root.MilkRunCore=api;root.MilkRunXlsx={parse:parseXlsx,sheetRows,sharedStrings,sheetPath};root.MilkRunCourierRtf={create:createCourierRtf};})(globalThis);
